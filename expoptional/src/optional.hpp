@@ -16,6 +16,7 @@
 #ifndef TL_OPTIONAL_HPP
 #define TL_OPTIONAL_HPP
 
+#include <concepts>
 #include <exception>
 #include <functional>
 #include <type_traits>
@@ -39,57 +40,35 @@ using is_optional = is_optional_impl<std::decay_t<T>>;
 template <class T>
 inline constexpr bool is_optional_v = is_optional<T>::value;
 
-// Change void to tl::monostate
-template <class U>
-using fixup_void = std::conditional_t<std::is_void_v<U>, std::monostate, U>;
-
-template <class F, class U, class = std::invoke_result_t<F, U>>
-using get_map_return = optional<fixup_void<std::invoke_result_t<F, U>>>;
-
 // Check if invoking F for some Us returns void
-template <class F, class = void, class... U>
-struct returns_void_impl;
 template <class F, class... U>
-struct returns_void_impl<F, std::void_t<std::invoke_result_t<F, U...>>, U...>
-    : std::is_void<std::invoke_result_t<F, U...>> {};
-template <class F, class... U>
-using returns_void = returns_void_impl<F, void, U...>;
-
-template <class T, class... U>
-using enable_if_ret_void = std::enable_if_t<returns_void<T&&, U...>::value>;
-
-template <class T, class... U>
-using disable_if_ret_void = std::enable_if_t<!returns_void<T&&, U...>::value>;
+concept returns_void = requires(F&& t, U&&... u) {
+  { std::invoke(std::forward<F>(t), std::forward<U>(u)...) } -> std::same_as<void>;
+};
 
 template <class T, class U>
-using enable_forward_value =
-    std::enable_if_t<std::is_constructible_v<T, U&&> && !std::is_same_v<std::decay_t<U>, std::in_place_t> &&
-                     !std::is_same_v<optional<T>, std::decay_t<U>>>;
+concept constructible_from_forward_value =
+    std::constructible_from<T, U&&> && !std::same_as<std::decay_t<U>, std::in_place_t> &&
+    !std::same_as<optional<T>, std::decay_t<U>>;
 
 template <class T, class U, class Other>
-using enable_from_other =
-    std::enable_if_t<std::is_constructible_v<T, Other> && !std::is_constructible_v<T, optional<U>&> &&
-                     !std::is_constructible_v<T, optional<U>&&> && !std::is_constructible_v<T, const optional<U>&> &&
-                     !std::is_constructible_v<T, const optional<U>&&> && !std::is_convertible_v<optional<U>&, T> &&
-                     !std::is_convertible_v<optional<U>&&, T> && !std::is_convertible_v<const optional<U>&, T> &&
-                     !std::is_convertible_v<const optional<U>&&, T>>;
+concept constructible_from_other =
+    std::constructible_from<T, Other> && !std::constructible_from<T, optional<U>&> &&
+    !std::constructible_from<T, optional<U>&&> && !std::constructible_from<T, const optional<U>&> &&
+    !std::constructible_from<T, const optional<U>&&> && !std::convertible_to<optional<U>&, T> &&
+    !std::convertible_to<optional<U>&&, T> && !std::convertible_to<const optional<U>&, T> &&
+    !std::convertible_to<const optional<U>&&, T>;
 
 template <class T, class U>
-using enable_assign_forward =
-    std::enable_if_t<!std::is_same_v<optional<T>, std::decay_t<U>> &&
-                     !std::conjunction_v<std::is_scalar<T>, std::is_same<T, std::decay_t<U>>> &&
-                     std::is_constructible_v<T, U> && std::is_assignable_v<T&, U>>;
+concept forward_assignable =
+    std::constructible_from<T, U> && std::assignable_from<T&, U> && !std::same_as<optional<T>, std::decay_t<U>> &&
+    !(std::is_scalar_v<T> && std::same_as<T, std::decay_t<U>>);
 
 template <class T, class U, class Other>
-using enable_assign_from_other =
-    std::enable_if_t<std::is_constructible_v<T, Other> && std::is_assignable_v<T&, Other> &&
-                     !std::is_constructible_v<T, optional<U>&> && !std::is_constructible_v<T, optional<U>&&> &&
-                     !std::is_constructible_v<T, const optional<U>&> &&
-                     !std::is_constructible_v<T, const optional<U>&&> && !std::is_convertible_v<optional<U>&, T> &&
-                     !std::is_convertible_v<optional<U>&&, T> && !std::is_convertible_v<const optional<U>&, T> &&
-                     !std::is_convertible_v<const optional<U>&&, T> && !std::is_assignable_v<T&, optional<U>&> &&
-                     !std::is_assignable_v<T&, optional<U>&&> && !std::is_assignable_v<T&, const optional<U>&> &&
-                     !std::is_assignable_v<T&, const optional<U>&&>>;
+concept assignable_from_other =
+    constructible_from_other<T, U, Other> && std::assignable_from<T&, Other> &&
+    !std::assignable_from<T&, optional<U>&> && !std::assignable_from<T&, optional<U>&&> &&
+    !std::assignable_from<T&, const optional<U>&> && !std::assignable_from<T&, const optional<U>&&>;
 
 // The storage base manages the actual storage, and correctly propagates
 // trivial destruction from T. This case is for when T is not trivially
@@ -468,7 +447,8 @@ class optional : private detail::optional_move_assign_base<T>,
   }
 
   /// Calls `f` if the optional is empty
-  template <class F, detail::enable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(detail::returns_void<F>)
   constexpr auto or_else(F&& f) & -> optional<T> {
     if (has_value()) return *this;
 
@@ -476,12 +456,14 @@ class optional : private detail::optional_move_assign_base<T>,
     return nullopt;
   }
 
-  template <class F, detail::disable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(!detail::returns_void<F>)
   constexpr auto or_else(F&& f) & -> optional<T> {
     return has_value() ? *this : std::forward<F>(f)();
   }
 
-  template <class F, detail::enable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(detail::returns_void<F>)
   constexpr auto or_else(F&& f) && -> optional<T> {
     if (has_value()) return std::move(*this);
 
@@ -489,12 +471,14 @@ class optional : private detail::optional_move_assign_base<T>,
     return nullopt;
   }
 
-  template <class F, detail::disable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(!detail::returns_void<F>)
   constexpr auto or_else(F&& f) && -> optional<T> {
     return has_value() ? std::move(*this) : std::forward<F>(f)();
   }
 
-  template <class F, detail::enable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(detail::returns_void<F>)
   constexpr auto or_else(F&& f) const& -> optional<T> {
     if (has_value()) return *this;
 
@@ -502,12 +486,14 @@ class optional : private detail::optional_move_assign_base<T>,
     return nullopt;
   }
 
-  template <class F, detail::disable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(!detail::returns_void<F>)
   constexpr auto or_else(F&& f) const& -> optional<T> {
     return has_value() ? *this : std::forward<F>(f)();
   }
 
-  template <class F, detail::enable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(detail::returns_void<F>)
   constexpr auto or_else(F&& f) const&& -> optional<T> {
     if (has_value()) return std::move(*this);
 
@@ -515,7 +501,8 @@ class optional : private detail::optional_move_assign_base<T>,
     return nullopt;
   }
 
-  template <class F, detail::disable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(!detail::returns_void<F>)
   constexpr auto or_else(F&& f) const&& -> optional<T> {
     return has_value() ? std::move(*this) : std::forward<F>(f)();
   }
@@ -638,48 +625,38 @@ class optional : private detail::optional_move_assign_base<T>,
   }
 
   /// Constructs the stored value with `u`.
-  template <class U = T, detail::enable_forward_value<T, U>* = nullptr>
-    requires std::is_convertible_v<U&&, T>
+  template <class U = T>
+    requires(detail::constructible_from_forward_value<T, U> && std::convertible_to<U &&, T>)
   constexpr optional(U&& u) : base(std::in_place, std::forward<U>(u)) {}  // NOLINT(google-explicit-constructor)
 
-  template <class U = T, detail::enable_forward_value<T, U>* = nullptr>
-    requires(!std::is_convertible_v<U &&, T>)
+  template <class U = T>
+    requires(detail::constructible_from_forward_value<T, U> && !std::convertible_to<U &&, T>)
   constexpr explicit optional(U&& u) : base(std::in_place, std::forward<U>(u)) {}
 
   /// Converting copy constructor.
-  template <class U, detail::enable_from_other<T, U, const U&>* = nullptr>
-    requires std::is_convertible_v<const U&, T>
-  optional(const optional<U>& rhs)  // NOLINT(google-explicit-constructor)
-  {
-    if (rhs.has_value()) {
-      this->construct(*rhs);
-    }
+  template <class U>
+    requires(detail::constructible_from_other<T, U, const U&> && std::convertible_to<const U&, T>)
+  optional(const optional<U>& rhs) {  // NOLINT(google-explicit-constructor)
+    if (rhs.has_value()) this->construct(*rhs);
   }
 
-  template <class U, detail::enable_from_other<T, U, const U&>* = nullptr>
-    requires(!std::is_convertible_v<const U&, T>)
+  template <class U>
+    requires(detail::constructible_from_other<T, U, const U&> && !std::convertible_to<const U&, T>)
   explicit optional(const optional<U>& rhs) {
-    if (rhs.has_value()) {
-      this->construct(*rhs);
-    }
+    if (rhs.has_value()) this->construct(*rhs);
   }
 
   /// Converting move constructor.
-  template <class U, detail::enable_from_other<T, U, U&&>* = nullptr>
-    requires std::is_convertible_v<U&&, T>
+  template <class U>
+    requires(detail::constructible_from_other<T, U, U &&> && std::convertible_to<U &&, T>)
   optional(optional<U>&& rhs) {  // NOLINT(google-explicit-constructor)
-    if (rhs.has_value()) {
-      this->construct(std::move(*rhs));
-    }
+    if (rhs.has_value()) this->construct(std::move(*rhs));
   }
 
-  template <class U, detail::enable_from_other<T, U, U&&>* = nullptr>
-  explicit optional(optional<U>&& rhs)
-    requires(!std::is_convertible_v<U &&, T>)
-  {
-    if (rhs.has_value()) {
-      this->construct(std::move(*rhs));
-    }
+  template <class U>
+    requires(detail::constructible_from_other<T, U, U &&> && !std::convertible_to<U &&, T>)
+  explicit optional(optional<U>&& rhs) {
+    if (rhs.has_value()) this->construct(std::move(*rhs));
   }
 
   /// Destroys the stored value if there is one.
@@ -711,7 +688,8 @@ class optional : private detail::optional_move_assign_base<T>,
 
   /// Assigns the stored value from `u`, destroying the old value if there was
   /// one.
-  template <class U = T, detail::enable_assign_forward<T, U>* = nullptr>
+  template <class U = T>
+    requires detail::forward_assignable<T, U>
   auto operator=(U&& u) -> optional& {
     if (has_value()) {
       this->m_value = std::forward<U>(u);
@@ -726,7 +704,8 @@ class optional : private detail::optional_move_assign_base<T>,
   ///
   /// Copies the value from `rhs` if there is one. Otherwise resets the stored
   /// value in `*this`.
-  template <class U, detail::enable_assign_from_other<T, U, const U&>* = nullptr>
+  template <class U>
+    requires(detail::assignable_from_other<T, U, const U&>)
   auto operator=(const optional<U>& rhs) -> optional& {
     if (has_value()) {
       if (rhs.has_value()) {
@@ -734,9 +713,7 @@ class optional : private detail::optional_move_assign_base<T>,
       } else {
         this->hard_reset();
       }
-    }
-
-    else if (rhs.has_value()) {
+    } else if (rhs.has_value()) {
       this->construct(*rhs);
     }
 
@@ -748,7 +725,8 @@ class optional : private detail::optional_move_assign_base<T>,
   ///
   /// Moves the value from `rhs` if there is one. Otherwise resets the stored
   /// value in `*this`.
-  template <class U, detail::enable_assign_from_other<T, U, U>* = nullptr>
+  template <class U>
+    requires(detail::assignable_from_other<T, U, U>)
   auto operator=(optional<U>&& rhs) -> optional& {
     if (has_value()) {
       if (rhs.has_value()) {
@@ -756,9 +734,7 @@ class optional : private detail::optional_move_assign_base<T>,
       } else {
         this->hard_reset();
       }
-    }
-
-    else if (rhs.has_value()) {
+    } else if (rhs.has_value()) {
       this->construct(std::move(*rhs));
     }
 
@@ -824,7 +800,7 @@ class optional : private detail::optional_move_assign_base<T>,
   /// Returns whether or not the optional has a value
   [[nodiscard]] constexpr auto has_value() const noexcept -> bool { return this->m_has_value; }
 
-  constexpr explicit operator bool() const noexcept { return this->m_has_value; }
+  [[nodiscard]] constexpr explicit operator bool() const noexcept { return this->m_has_value; }
 
   /// Returns the contained value if there is one, otherwise throws
   /// bad_optional_access
@@ -849,14 +825,14 @@ class optional : private detail::optional_move_assign_base<T>,
   /// Returns the stored value if there is one, otherwise returns `u`
   template <class U>
   [[nodiscard]] constexpr auto value_or(U&& u) const& -> T {
-    static_assert(std::is_copy_constructible_v<T> && std::is_convertible_v<U&&, T>,
+    static_assert(std::copy_constructible<T> && std::convertible_to<U&&, T>,
                   "T must be copy constructible and convertible from U");
     return has_value() ? **this : static_cast<T>(std::forward<U>(u));
   }
 
   template <class U>
   [[nodiscard]] constexpr auto value_or(U&& u) && -> T {
-    static_assert(std::is_move_constructible_v<T> && std::is_convertible_v<U&&, T>,
+    static_assert(std::move_constructible<T> && std::convertible_to<U&&, T>,
                   "T must be move constructible and convertible from U");
     return has_value() ? std::move(**this) : static_cast<T>(std::forward<U>(u));
   }
@@ -1028,16 +1004,14 @@ optional(T) -> optional<T>;
 /// \exclude
 namespace detail {
 template <class Opt, class F, class Ret = decltype(std::invoke(std::declval<F>(), *std::declval<Opt>()))>
-constexpr auto optional_map_impl(Opt&& opt, F&& f)
   requires(!std::is_void_v<Ret>)
-{
+constexpr auto optional_map_impl(Opt&& opt, F&& f) {
   return opt.has_value() ? std::invoke(std::forward<F>(f), *std::forward<Opt>(opt)) : optional<Ret>(nullopt);
 }
 
 template <class Opt, class F, class Ret = decltype(std::invoke(std::declval<F>(), *std::declval<Opt>()))>
-auto optional_map_impl(Opt&& opt, F&& f)
   requires std::is_void_v<Ret>
-{
+constexpr auto optional_map_impl(Opt&& opt, F&& f) {
   if (opt.has_value()) {
     std::invoke(std::forward<F>(f), *std::forward<Opt>(opt));
     return make_optional(std::monostate{});
@@ -1129,7 +1103,8 @@ class optional<T&> {
   }
 
   /// Calls `f` if the optional is empty
-  template <class F, detail::enable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(detail::returns_void<F>)
   constexpr auto or_else(F&& f) & -> optional<T> {
     if (has_value()) return *this;
 
@@ -1137,12 +1112,14 @@ class optional<T&> {
     return nullopt;
   }
 
-  template <class F, detail::disable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(!detail::returns_void<F>)
   constexpr auto or_else(F&& f) & -> optional<T> {
     return has_value() ? *this : std::forward<F>(f)();
   }
 
-  template <class F, detail::enable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(detail::returns_void<F>)
   constexpr auto or_else(F&& f) && -> optional<T> {
     if (has_value()) return std::move(*this);
 
@@ -1150,12 +1127,14 @@ class optional<T&> {
     return nullopt;
   }
 
-  template <class F, detail::disable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(!detail::returns_void<F>)
   constexpr auto or_else(F&& f) && -> optional<T> {
     return has_value() ? std::move(*this) : std::forward<F>(f)();
   }
 
-  template <class F, detail::enable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(detail::returns_void<F>)
   constexpr auto or_else(F&& f) const& -> optional<T> {
     if (has_value()) return *this;
 
@@ -1163,12 +1142,14 @@ class optional<T&> {
     return nullopt;
   }
 
-  template <class F, detail::disable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(!detail::returns_void<F>)
   constexpr auto or_else(F&& f) const& -> optional<T> {
     return has_value() ? *this : std::forward<F>(f)();
   }
 
-  template <class F, detail::enable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(detail::returns_void<F>)
   constexpr auto or_else(F&& f) const&& -> optional<T> {
     if (has_value()) return std::move(*this);
 
@@ -1176,7 +1157,8 @@ class optional<T&> {
     return nullopt;
   }
 
-  template <class F, detail::disable_if_ret_void<F>* = nullptr>
+  template <class F>
+    requires(!detail::returns_void<F>)
   constexpr auto or_else(F&& f) const&& -> optional<T> {
     return has_value() ? std::move(*this) : std::forward<F>(f)();
   }
