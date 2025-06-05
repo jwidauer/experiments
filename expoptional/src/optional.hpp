@@ -191,6 +191,7 @@ template <class T, bool = std::is_trivially_move_constructible_v<T>>
 struct optional_move_base : optional_copy_base<T> {
   using optional_copy_base<T>::optional_copy_base;
 };
+
 template <class T>
 struct optional_move_base<T, false> : optional_copy_base<T> {
   using optional_copy_base<T>::optional_copy_base;
