@@ -1,6 +1,7 @@
 #include <latch>
 #include <thread>
 
+#include "channel.hpp"
 #include "spsc.hpp"
 
 struct Foo {
@@ -63,5 +64,13 @@ void test_mt() {
 auto main() -> int {
   test_st();
   test_mt();
+
+  auto [side1, side2] = channel::create<Foo, 9>();
+
+  side1.send({.y = 42});
+  auto opt = side2.recv();
+  assert(opt.has_value());
+  assert(opt->y == 42);
+
   return 0;
 }
