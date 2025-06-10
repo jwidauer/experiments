@@ -10,7 +10,6 @@
 #include <atomic>
 #include <cmath>
 #include <memory>
-#include <new>
 #include <utility>
 
 #include "uninitialized_array.hpp"
@@ -141,13 +140,11 @@ class SPSC {
     slots_.fetch_add(1, std::memory_order::release);
   }
 
-  static constexpr std::size_t chache_line_size = std::hardware_destructive_interference_size;
-
-  UninitializedArray<T, N> data_{};  // circular buffer memory aligned to element alignment
-  std::atomic<ssize_t> slots_{N};    // number of slots currently free
-  std::atomic<ssize_t> items_{0};    // number of elements currently enqueued
-  std::size_t next_slot_{};          // index of next free slot to enqueue into
-  std::size_t next_item_{};          // index of next element to dequeue from
+  std::atomic<ssize_t> slots_{N};           // number of slots currently free
+  std::atomic<ssize_t> items_{0};           // number of elements currently enqueued
+  std::size_t next_slot_{};                 // index of next free slot to enqueue into
+  std::size_t next_item_{};                 // index of next element to dequeue from
+  UninitializedArray<T, capacity> data_{};  // circular buffer memory aligned to element alignment
 };
 
 }  // namespace moodycamel

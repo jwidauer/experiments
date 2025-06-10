@@ -4,19 +4,42 @@
 #include "spsc.hpp"
 
 struct Foo {
-  int y;
+  std::size_t y;
 };
 
 namespace {
+void test_st() {
+  moodycamel::SPSC<Foo, 9> queue;
 
-void test() {
-  moodycamel::SPSC<Foo, 8> queue;
+  constexpr auto cap = queue.max_capacity();
+
+  for (std::size_t i = 0; i < cap; ++i) {
+    assert(queue.try_enqueue({.y = i}));
+  }
+  assert(!queue.try_enqueue({.y = cap}));
+
+  Foo f;
+  assert(queue.try_dequeue(f));
+  assert(f.y == 0);
+  assert(queue.try_enqueue({.y = cap}));
+
+  assert(!queue.try_enqueue({.y = cap}));
+
+  for (std::size_t i = 0; i < cap; ++i) {
+    assert(queue.try_dequeue(f));
+    assert(f.y == (i + 1));
+  }
+  assert(!queue.try_dequeue(f));
+}
+
+void test_mt() {
+  moodycamel::SPSC<Foo, 9> queue;
 
   std::latch start{1};
 
   std::jthread producer([&]() {
     start.wait();
-    for (int i = 0; i < 8; ++i) {
+    for (std::size_t i = 0; i < queue.max_capacity(); ++i) {
       while (!queue.try_enqueue({.y = i})) {
         std::this_thread::yield();  // Wait until there is space
       }
@@ -24,7 +47,7 @@ void test() {
   });
   std::jthread consumer([&]() {
     start.wait();
-    for (int i = 0; i < 8; ++i) {
+    for (std::size_t i = 0; i < queue.max_capacity(); ++i) {
       Foo f;
       while (!queue.try_dequeue(f)) {
         std::this_thread::yield();  // Wait until there is an item
@@ -38,6 +61,7 @@ void test() {
 }  // namespace
 
 auto main() -> int {
-  test();
+  test_st();
+  test_mt();
   return 0;
 }
