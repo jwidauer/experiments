@@ -24,7 +24,7 @@ class SPSC {
 
   static constexpr std::size_t capacity =
       std::bit_ceil(N);                              // round up to next power of two for efficient modulo operations
-  static constexpr std::size_t mask = capacity + 1;  // mask for circular buffer (power of two minus one)
+  static constexpr std::size_t mask = capacity - 1;  // mask for circular buffer (power of two minus one)
 
   SPSC() = default;
 
@@ -143,11 +143,11 @@ class SPSC {
 
   static constexpr std::size_t chache_line_size = std::hardware_destructive_interference_size;
 
-  UninitializedArray<T, N> data_{};                    // circular buffer memory aligned to element alignment
-  std::atomic<ssize_t> slots_{N};                      // number of slots currently free
-  std::atomic<ssize_t> items_{0};                      // number of elements currently enqueued
-  alignas(chache_line_size) std::size_t next_slot_{};  // index of next free slot to enqueue into
-  alignas(chache_line_size) std::size_t next_item_{};  // index of next element to dequeue from
+  UninitializedArray<T, N> data_{};  // circular buffer memory aligned to element alignment
+  std::atomic<ssize_t> slots_{N};    // number of slots currently free
+  std::atomic<ssize_t> items_{0};    // number of elements currently enqueued
+  std::size_t next_slot_{};          // index of next free slot to enqueue into
+  std::size_t next_item_{};          // index of next element to dequeue from
 };
 
 }  // namespace moodycamel
