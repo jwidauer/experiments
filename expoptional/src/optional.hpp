@@ -75,11 +75,11 @@ concept assignable_from_other =
 // destructible.
 template <class T, bool = ::std::is_trivially_destructible_v<T>>
 struct optional_storage_base {
-  constexpr optional_storage_base() noexcept : m_dummy(), m_has_value(false) {}
+  constexpr optional_storage_base() noexcept : m_dummy{} {}
 
   template <class... U>
   constexpr optional_storage_base(std::in_place_t /*unused*/, U&&... u)  // NOLINT(google-explicit-constructor)
-      : m_value(std::forward<U>(u)...), m_has_value(true) {}
+      : m_value{std::forward<U>(u)...}, m_has_value{true} {}
 
   ~optional_storage_base() {
     if (m_has_value) {
@@ -94,17 +94,17 @@ struct optional_storage_base {
     T m_value;
   };
 
-  bool m_has_value;
+  bool m_has_value{false};
 };
 
 // This case is for when T is trivially destructible.
 template <class T>
 struct optional_storage_base<T, true> {
-  constexpr optional_storage_base() noexcept : m_dummy() {}
+  constexpr optional_storage_base() noexcept : m_dummy{} {}
 
   template <class... U>
   constexpr optional_storage_base(std::in_place_t /*unused*/, U&&... u)  // NOLINT(google-explicit-constructor)
-      : m_value(std::forward<U>(u)...), m_has_value(true) {}
+      : m_value{std::forward<U>(u)...}, m_has_value{true} {}
 
   // No destructor, so this class is trivially destructible
 
@@ -114,7 +114,7 @@ struct optional_storage_base<T, true> {
     T m_value;
   };
 
-  bool m_has_value = false;
+  bool m_has_value{false};
 };
 
 // This base class provides some handy member functions which can be used in
@@ -627,36 +627,20 @@ class optional : private detail::optional_move_assign_base<T>,
 
   /// Constructs the stored value with `u`.
   template <class U = T>
-    requires(detail::constructible_from_forward_value<T, U> && std::convertible_to<U &&, T>)
-  constexpr optional(U&& u) : base(std::in_place, std::forward<U>(u)) {}  // NOLINT(google-explicit-constructor)
-
-  template <class U = T>
-    requires(detail::constructible_from_forward_value<T, U> && !std::convertible_to<U &&, T>)
-  constexpr explicit optional(U&& u) : base(std::in_place, std::forward<U>(u)) {}
+    requires(detail::constructible_from_forward_value<T, U>)
+  constexpr explicit(!std::is_convertible_v<U&&, T>) optional(U&& u) : base(std::in_place, std::forward<U>(u)) {}
 
   /// Converting copy constructor.
   template <class U>
-    requires(detail::constructible_from_other<T, U, const U&> && std::convertible_to<const U&, T>)
-  optional(const optional<U>& rhs) {  // NOLINT(google-explicit-constructor)
-    if (rhs.has_value()) this->construct(*rhs);
-  }
-
-  template <class U>
-    requires(detail::constructible_from_other<T, U, const U&> && !std::convertible_to<const U&, T>)
-  explicit optional(const optional<U>& rhs) {
+    requires(detail::constructible_from_other<T, U, const U&>)
+  explicit(!std::is_convertible_v<const U&, T>) optional(const optional<U>& rhs) {
     if (rhs.has_value()) this->construct(*rhs);
   }
 
   /// Converting move constructor.
   template <class U>
-    requires(detail::constructible_from_other<T, U, U &&> && std::convertible_to<U &&, T>)
-  optional(optional<U>&& rhs) {  // NOLINT(google-explicit-constructor)
-    if (rhs.has_value()) this->construct(std::move(*rhs));
-  }
-
-  template <class U>
-    requires(detail::constructible_from_other<T, U, U &&> && !std::convertible_to<U &&, T>)
-  explicit optional(optional<U>&& rhs) {
+    requires(detail::constructible_from_other<T, U, U &&>)
+  explicit(!std::is_convertible_v<U&&, T>) optional(optional<U>&& rhs) {
     if (rhs.has_value()) this->construct(std::move(*rhs));
   }
 
@@ -1004,6 +988,7 @@ optional(T) -> optional<T>;
 
 /// \exclude
 namespace detail {
+
 template <class Opt, class F, class Ret = decltype(std::invoke(std::declval<F>(), *std::declval<Opt>()))>
   requires(!std::is_void_v<Ret>)
 constexpr auto optional_map_impl(Opt&& opt, F&& f) {
@@ -1020,6 +1005,7 @@ constexpr auto optional_map_impl(Opt&& opt, F&& f) {
 
   return optional<std::monostate>(nullopt);
 }
+
 }  // namespace detail
 
 /// Specialization for when `T` is a reference. `optional<T&>` acts similarly
