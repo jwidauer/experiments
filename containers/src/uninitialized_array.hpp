@@ -8,12 +8,16 @@
 #include "normal_iterator.hpp"
 #include "type_traits.hpp"
 
-template <std::size_t Len, std::size_t Align>
+template <class T, std::size_t N>
 struct AlignedStorage {
-  constexpr auto data(this auto& self) -> decltype(auto) { return self.data_.data(); }
-
  private:
-  alignas(Align) std::array<std::byte, Len> data_;
+  struct alignas(T) Data {
+    std::array<std::byte, sizeof(T) * N> data;
+  } data_;
+
+ public:
+  [[nodiscard]] constexpr auto data() -> Data* { return std::addressof(data_); }
+  [[nodiscard]] constexpr auto data() const -> const Data* { return std::addressof(data_); }
 };
 
 template <typename T, std::size_t N>
@@ -33,11 +37,13 @@ class UninitializedArray {
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
   // NOLINTEND(readability-identifier-naming)
 
-  constexpr auto at [[nodiscard]] (this auto& self, std::size_t idx) -> decltype(auto) {
+  constexpr auto at [[nodiscard]] (this auto& self, std::size_t idx)
+  -> std::optional<NormalIterator<copy_const_t<decltype(self), T>*, UninitializedArray>> {
     return idx < N ? std::make_optional(self.begin() + idx) : std::nullopt;
   }
 
-  constexpr auto operator[] [[nodiscard]] (this auto& self, std::size_t idx) -> decltype(auto) {
+  template <typename Self>
+  constexpr auto operator[] [[nodiscard]] (this Self& self, std::size_t idx) -> copy_const_t<Self, T>& {
     assert(idx < N && "Index out of bounds");
     return *(self.data() + idx);
   }
@@ -59,12 +65,14 @@ class UninitializedArray {
   constexpr auto crend [[nodiscard]] () const -> const_reverse_iterator { return std::make_reverse_iterator(cbegin()); }
 
   consteval auto size [[nodiscard]] () const -> std::size_t { return N; }
-  constexpr auto data [[nodiscard]] (this auto& self) -> decltype(auto) {
+
+  template <typename Self>
+  constexpr auto data [[nodiscard]] (this Self& self) -> copy_const_t<Self, T>* {
     if constexpr (is_sufficiently_trivial) {
       return self.storage_.data();
     } else {
-      using TPtr = copy_const_t<decltype(self), T>*;
-      return reinterpret_cast<TPtr>(self.storage_.data());
+      using ptr_t = copy_const_t<Self, T>*;
+      return reinterpret_cast<ptr_t>(self.storage_.data());
     }
   }
 
@@ -77,11 +85,10 @@ class UninitializedArray {
   static constexpr bool is_sufficiently_trivial =
       std::is_trivially_default_constructible_v<T> && std::is_trivially_destructible_v<T>;
 
-  using Storage =
-      std::conditional_t<is_sufficiently_trivial, std::array<T, N>, AlignedStorage<sizeof(T) * N, alignof(T)>>;
+  using storage_t = std::conditional_t<is_sufficiently_trivial, std::array<T, N>, AlignedStorage<T, N>>;
 
   // Allow storage of zero elements to not take up space
-  [[no_unique_address]] Storage storage_;
+  [[no_unique_address]] storage_t storage_;
 };
 
 #endif  // INCLUDE_UNINITIALIZED_ARRAY_HPP_

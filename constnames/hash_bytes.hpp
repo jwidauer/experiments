@@ -9,7 +9,6 @@
 // FNV is provided primarily for backward compatibility.
 
 #include <cstdint>
-#include <print>
 
 namespace detail {
 
@@ -21,17 +20,49 @@ inline auto unaligned_load(const char* p) -> T {
 }
 
 // Loads n bytes, where 1 <= n < 8.
-inline auto load_bytes(const char* p, int n) -> std::size_t {
-  std::size_t result = 0;
+template <typename T>
+inline auto load_bytes(const char* p, int n) -> T {
+  T result = 0;
   --n;
   do result = (result << 8) + static_cast<unsigned char>(p[n]);
   while (--n >= 0);
   return result;
 }
 
-inline auto shift_mix(std::size_t v) -> std::size_t { return v ^ (v >> 47); }
+template <std::size_t r, typename T>
+inline auto shift_mix(T v) -> T {
+  return v ^ (v >> r);
+}
 
 }  // namespace detail
+
+inline auto hash_bytes32_new(const void* ptr, const uint32_t len, uint32_t seed) -> uint32_t {
+  const uint32_t m = 0x5bd1e995;
+  uint32_t hash = seed ^ len;
+  const char* const buf = static_cast<const char*>(ptr);
+
+  const uint32_t len_aligned = len & ~static_cast<uint32_t>(0x3);
+  const char* const end = buf + len_aligned;
+
+  // Mix 4 bytes at a time into the hash.
+  for (const char* p = buf; p != end; p += 4) {
+    auto k = detail::shift_mix<24>(detail::unaligned_load<uint32_t>(p) * m) * m;
+    hash *= m;
+    hash ^= k;
+  }
+
+  if ((len & 0x3) != 0) {
+    const auto k = detail::load_bytes<uint32_t>(end, len & 0x3);
+    hash ^= k;
+    hash *= m;
+  }
+
+  // Do a few final mixes of the hash.
+  hash ^= hash >> 13;
+  hash *= m;
+  hash ^= hash >> 15;
+  return hash;
+}
 
 // Implementation of Murmur hash for 32-bit size_t.
 inline auto hash_bytes32(const void* ptr, uint32_t len, uint32_t seed) -> uint32_t {
@@ -76,7 +107,7 @@ inline auto hash_bytes32(const void* ptr, uint32_t len, uint32_t seed) -> uint32
 }
 
 // Implementation of Murmur hash for 64-bit size_t.
-inline auto hash_bytes64(const void* ptr, uint64_t len, uint64_t seed) -> uint64_t {
+inline auto hash_bytes64(const void* ptr, const uint64_t len, uint64_t seed) -> uint64_t {
   static const uint64_t kMul = ((static_cast<uint64_t>(0xc6a4a793UL)) << 32UL) + static_cast<uint64_t>(0x5bd1e995UL);
   const char* const buf = static_cast<const char*>(ptr);
 
@@ -87,18 +118,18 @@ inline auto hash_bytes64(const void* ptr, uint64_t len, uint64_t seed) -> uint64
 
   uint64_t hash = seed ^ (len * kMul);
   for (const char* p = buf; p != end; p += 8) {
-    const uint64_t data = detail::shift_mix(detail::unaligned_load<uint64_t>(p) * kMul) * kMul;
+    const uint64_t data = detail::shift_mix<47>(detail::unaligned_load<uint64_t>(p) * kMul) * kMul;
     hash ^= data;
     hash *= kMul;
   }
   // 0x7 == 0b0111
   if ((len & 0x7) != 0) {
-    const uint64_t data = detail::load_bytes(end, len & 0x7);
+    const auto data = detail::load_bytes<uint64_t>(end, len & 0x7);
     hash ^= data;
     hash *= kMul;
   }
-  hash = detail::shift_mix(hash) * kMul;
-  hash = detail::shift_mix(hash);
+  hash = detail::shift_mix<47>(hash) * kMul;
+  hash = detail::shift_mix<47>(hash);
   return hash;
 }
 
