@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <print>
 #include <string_view>
 
 #define CONSTEVAL_FN [[nodiscard]] consteval auto
@@ -81,7 +82,7 @@ class CompTimeString {
 
   consteval CompTimeString() noexcept = default;
 
-  consteval CompTimeString(const char (&str)[N]) noexcept {
+  consteval explicit CompTimeString(const char (&str)[N]) noexcept {
     std::copy_n(str, N, str_.begin());
   }
 
@@ -148,6 +149,7 @@ class CompTimeString {
     return SplitIter{std::string_view{c_str(), size()}, needle};
   }
 
+  // NOLINTNEXTLINE(google-explicit-constructor)
   consteval operator std::string_view() const noexcept {
     return std::string_view{c_str(), size()};
   }
@@ -192,11 +194,26 @@ CONSTEXPR_FN operator==(const CompTimeString<N>& lhs,
   return std::ranges::equal(lhs, rhs);
 }
 
-int main() {
+template <std::size_t N>
+struct Tmp {
+  consteval Tmp(const char (&str)[N]) noexcept {
+    std::copy_n(str, N, this->str);
+  }
+
+  char str[N]{};  // +1 for null-termination
+};
+
+template <Tmp tmp>
+CONSTEVAL_FN operator""_cstr() noexcept -> CompTimeString<sizeof(tmp.str)> {
+  return CompTimeString{tmp.str};
+}
+
+auto main() -> int {
   constexpr CompTimeString str1("Hello");
   constexpr CompTimeString str2(" World");
 
   static_assert(str1.append(str2) == CompTimeString{"Hello World"});
+  static_assert(str1.append(str2) == "Hello World"_cstr);
   static_assert(str1.append(str2) == "Hello World");
   static_assert(str1 + str2 == "Hello World");
   static_assert(str1 + " World" == "Hello World");

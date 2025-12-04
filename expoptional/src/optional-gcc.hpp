@@ -6,6 +6,7 @@
 #include <bits/functional_hash.h>
 #include <bits/stl_construct.h>  // _Construct
 
+#include <cassert>
 #include <compare>
 #include <concepts>
 #include <exception>
@@ -21,7 +22,7 @@ class Optional;
 
 template <typename Fn>
 struct OptionalFunc {
-  Fn& M_f;
+  Fn& func;
 };
 
 /**
@@ -38,7 +39,7 @@ class BadOptionalAccess : public std::exception {
 };
 
 // XXX Does not belong here.
-[[__noreturn__]] inline void throw_bad_optional_access() { _GLIBCXX_THROW_OR_ABORT(BadOptionalAccess()); }
+[[noreturn]] inline void throw_bad_optional_access() { _GLIBCXX_THROW_OR_ABORT(BadOptionalAccess()); }
 
 // This class template manages construction/destruction of
 // the contained value for a std::optional.
@@ -51,22 +52,22 @@ struct OptionalPayloadBase {
 
   template <typename... Args>
   constexpr OptionalPayloadBase(std::in_place_t tag, Args&&... args)  // NOLINT(google-explicit-constructor)
-      : M_payload(tag, std::forward<Args>(args)...), M_engaged(true) {}
+      : payload(tag, std::forward<Args>(args)...), engaged(true) {}
 
   template <typename Up, typename... Args>
   constexpr OptionalPayloadBase(std::initializer_list<Up> il, Args&&... args)
-      : M_payload(il, std::forward<Args>(args)...), M_engaged(true) {}
+      : payload(il, std::forward<Args>(args)...), engaged(true) {}
 
-  // Constructor used by _Optional_base copy constructor when the
+  // Constructor used by OptionalBase copy constructor when the
   // contained value is not trivially copy constructible.
-  constexpr OptionalPayloadBase(bool /* __engaged */, const OptionalPayloadBase& other) {
-    if (other.M_engaged) this->m_construct(other.m_get());
+  constexpr OptionalPayloadBase(bool /* engaged */, const OptionalPayloadBase& other) {
+    if (other.engaged) this->construct(other.get());
   }
 
-  // Constructor used by _Optional_base move constructor when the
+  // Constructor used by OptionalBase move constructor when the
   // contained value is not trivially move constructible.
-  constexpr OptionalPayloadBase(bool /* __engaged */, OptionalPayloadBase&& other) {
-    if (other.M_engaged) this->m_construct(std::move(other.m_get()));
+  constexpr OptionalPayloadBase(bool /* engaged */, OptionalPayloadBase&& other) {
+    if (other.engaged) this->construct(std::move(other.get()));
   }
 
   // Copy constructor is only used to when the contained value is
@@ -82,27 +83,27 @@ struct OptionalPayloadBase {
   auto operator=(OptionalPayloadBase&&) -> OptionalPayloadBase& = default;
 
   // used to perform non-trivial copy assignment.
-  constexpr void m_copy_assign(const OptionalPayloadBase& other) {
-    if (this->M_engaged && other.M_engaged)
-      this->m_get() = other.m_get();
+  constexpr void copy_assign(const OptionalPayloadBase& other) {
+    if (this->engaged && other.engaged)
+      this->get() = other.get();
     else {
-      if (other.M_engaged)
-        this->m_construct(other.m_get());
+      if (other.engaged)
+        this->construct(other.get());
       else
-        this->m_reset();
+        this->reset();
     }
   }
 
   // used to perform non-trivial move assignment.
-  constexpr void m_move_assign(OptionalPayloadBase&& other) noexcept(
+  constexpr void move_assign(OptionalPayloadBase&& other) noexcept(
       std::conjunction_v<std::is_nothrow_move_constructible<Tp>, std::is_nothrow_move_assignable<Tp>>) {
-    if (this->M_engaged && other.M_engaged)
-      this->m_get() = std::move(other.m_get());
+    if (this->engaged && other.engaged)
+      this->get() = std::move(other.get());
     else {
-      if (other.M_engaged)
-        this->m_construct(std::move(other.m_get()));
+      if (other.engaged)
+        this->construct(std::move(other.get()));
       else
-        this->m_reset();
+        this->reset();
     }
   }
 
@@ -110,80 +111,79 @@ struct OptionalPayloadBase {
 
   template <typename Up, bool = std::is_trivially_destructible_v<Up>>
   union Storage {
-    constexpr Storage() noexcept : M_empty() {}
+    constexpr Storage() noexcept : empty() {}
 
     template <typename... Args>
     constexpr Storage(std::in_place_t /*unused*/, Args&&... args)  // NOLINT(google-explicit-constructor)
-        : M_value(std::forward<Args>(args)...) {}
+        : value(std::forward<Args>(args)...) {}
 
     template <typename Vp, typename... Args>
-    constexpr Storage(std::initializer_list<Vp> il, Args&&... args) : M_value(il, std::forward<Args>(args)...) {}
+    constexpr Storage(std::initializer_list<Vp> il, Args&&... args) : value(il, std::forward<Args>(args)...) {}
 
     template <typename Fn, typename Arg>
     constexpr Storage(OptionalFunc<Fn> f, Arg&& arg)
-        : M_value(std::__invoke(std::forward<Fn>(f._M_f), std::forward<Arg>(arg))) {}
+        : value(std::invoke(std::forward<Fn>(f.func), std::forward<Arg>(arg))) {}
 
-    EmptyByte M_empty;
-    Up M_value;
+    EmptyByte empty;
+    Up value;
   };
 
   template <typename Up>
   union Storage<Up, false> {
-    constexpr Storage() noexcept : M_empty() {}
+    constexpr Storage() noexcept : empty() {}
 
     template <typename... Args>
     constexpr Storage(std::in_place_t /*unused*/, Args&&... args)  // NOLINT(google-explicit-constructor)
-        : M_value(std::forward<Args>(args)...) {}
+        : value(std::forward<Args>(args)...) {}
 
     template <typename Vp, typename... Args>
-    constexpr Storage(std::initializer_list<Vp> il, Args&&... args) : M_value(il, std::forward<Args>(args)...) {}
+    constexpr Storage(std::initializer_list<Vp> il, Args&&... args) : value(il, std::forward<Args>(args)...) {}
 
     template <typename Fn, typename Arg>
     constexpr Storage(OptionalFunc<Fn> f, Arg&& arg)
-        : M_value(std::__invoke(std::forward<Fn>(f._M_f), std::forward<Arg>(arg))) {}
+        : value(std::__invoke(std::forward<Fn>(f._M_f), std::forward<Arg>(arg))) {}
 
     // User-provided destructor is needed when _Up has non-trivial dtor.
-    _GLIBCXX20_CONSTEXPR ~Storage() {}
+    constexpr ~Storage() {}
 
-    EmptyByte M_empty;
-    Up M_value;
+    EmptyByte empty;
+    Up value;
   };
 
-  Storage<StoredType> M_payload;
-
-  bool M_engaged = false;
+  Storage<StoredType> payload;
+  bool engaged = false;
 
   template <typename... Args>
-  constexpr void m_construct(Args&&... args) noexcept(std::is_nothrow_constructible_v<StoredType, Args...>) {
-    std::_Construct(std::__addressof(this->M_payload._M_value), std::forward<Args>(args)...);
-    this->M_engaged = true;
+  constexpr void construct(Args&&... args) noexcept(std::is_nothrow_constructible_v<StoredType, Args...>) {
+    std::_Construct(std::__addressof(this->payload._M_value), std::forward<Args>(args)...);
+    this->engaged = true;
   }
 
-  constexpr void m_destroy() noexcept {
-    M_engaged = false;
-    M_payload._M_value.~StoredType();
+  constexpr void destroy() noexcept {
+    engaged = false;
+    payload._M_value.~StoredType();
   }
 
   template <typename Fn, typename Up>
-  constexpr void m_apply(OptionalFunc<Fn> f, Up&& x) {
-    std::construct_at(std::__addressof(this->M_payload), f, std::forward<Up>(x));
-    M_engaged = true;
+  constexpr void apply(OptionalFunc<Fn> f, Up&& x) {
+    std::construct_at(std::__addressof(this->payload), f, std::forward<Up>(x));
+    engaged = true;
   }
 
   // The _M_get() operations have _M_engaged as a precondition.
   // They exist to access the contained value with the appropriate
   // const-qualification, because _M_payload has had the const removed.
 
-  constexpr auto m_get() noexcept -> Tp& { return this->M_payload._M_value; }
+  constexpr auto get() noexcept -> Tp& { return this->payload._M_value; }
 
-  constexpr auto m_get() const noexcept -> const Tp& { return this->M_payload._M_value; }
+  constexpr auto get() const noexcept -> const Tp& { return this->payload._M_value; }
 
   // _M_reset is a 'safe' operation with no precondition.
-  constexpr void m_reset() noexcept {
-    if (this->M_engaged)
-      m_destroy();
+  constexpr void reset() noexcept {
+    if (this->engaged)
+      destroy();
     else  // This seems redundant but improves codegen, see PR 112480.
-      this->M_engaged = false;
+      this->engaged = false;
   }
 };
 
@@ -195,17 +195,17 @@ template <
 struct OptionalPayload;
 
 // Payload for potentially-constexpr optionals (trivial copy/move/destroy).
-template <typename Tp>
-struct OptionalPayload<Tp, true, true, true> : OptionalPayloadBase<Tp> {
-  using OptionalPayloadBase<Tp>::Tp;
+template <typename T>
+struct OptionalPayload<T, true, true, true> : OptionalPayloadBase<T> {
+  using OptionalPayloadBase<T>::OptionalPayloadBase;
 
   OptionalPayload() = default;
 };
 
 // Payload for optionals with non-trivial copy construction/assignment.
-template <typename Tp>
-struct OptionalPayload<Tp, true, false, true> : OptionalPayloadBase<Tp> {
-  using OptionalPayloadBase<Tp>::Tp;
+template <typename T>
+struct OptionalPayload<T, true, false, true> : OptionalPayloadBase<T> {
+  using OptionalPayloadBase<T>::OptionalPayloadBase;
 
   OptionalPayload() = default;
   ~OptionalPayload() = default;
@@ -215,7 +215,7 @@ struct OptionalPayload<Tp, true, false, true> : OptionalPayloadBase<Tp> {
 
   // Non-trivial copy assignment.
   constexpr auto operator=(const OptionalPayload& other) -> OptionalPayload& {
-    this->_M_copy_assign(other);
+    this->copy_assign(other);
     return *this;
   }
 };
@@ -235,7 +235,7 @@ struct OptionalPayload<Tp, true, true, false> : OptionalPayloadBase<Tp> {
   constexpr auto operator=(OptionalPayload&& other) noexcept(
       std::conjunction_v<std::is_nothrow_move_constructible<Tp>, std::is_nothrow_move_assignable<Tp>>)
       -> OptionalPayload& {
-    this->_M_move_assign(std::move(other));
+    this->move_assign(std::move(other));
     return *this;
   }
 };
@@ -252,7 +252,7 @@ struct OptionalPayload<Tp, true, false, false> : OptionalPayloadBase<Tp> {
 
   // Non-trivial copy assignment.
   constexpr auto operator=(const OptionalPayload& other) -> OptionalPayload& {
-    this->_M_copy_assign(other);
+    this->copy_assign(other);
     return *this;
   }
 
@@ -260,7 +260,7 @@ struct OptionalPayload<Tp, true, false, false> : OptionalPayloadBase<Tp> {
   constexpr auto operator=(OptionalPayload&& other) noexcept(
       std::conjunction_v<std::is_nothrow_move_constructible<Tp>, std::is_nothrow_move_assignable<Tp>>)
       -> OptionalPayload& {
-    this->_M_move_assign(std::move(other));
+    this->move_assign(std::move(other));
     return *this;
   }
 };
@@ -270,6 +270,7 @@ template <typename Tp, bool Copy, bool Move>
 struct OptionalPayload<Tp, false, Copy, Move> : OptionalPayload<Tp, true, false, false> {
   // Base class implements all the constructors and assignment operators:
   using OptionalPayload<Tp, true, false, false>::OptionalPayload;
+
   OptionalPayload() = default;
   OptionalPayload(const OptionalPayload&) = default;
   OptionalPayload(OptionalPayload&&) = default;
@@ -277,10 +278,10 @@ struct OptionalPayload<Tp, false, Copy, Move> : OptionalPayload<Tp, true, false,
   auto operator=(OptionalPayload&&) -> OptionalPayload& = default;
 
   // Destructor needs to destroy the contained value:
-  _GLIBCXX20_CONSTEXPR ~OptionalPayload() { this->_M_reset(); }
+  constexpr ~OptionalPayload() { this->reset(); }
 };
 
-// Common base class for _Optional_base<T> to avoid repeating these
+// Common base class for OptionalBase<T> to avoid repeating these
 // member functions in each specialization.
 template <typename Tp, typename Dp>
 class OptionalBaseImpl {
@@ -290,28 +291,28 @@ class OptionalBaseImpl {
   // The _M_construct operation has !_M_engaged as a precondition
   // while _M_destruct has _M_engaged as a precondition.
   template <typename... Args>
-  constexpr void m_construct(Args&&... args) noexcept(std::is_nothrow_constructible_v<StoredType, Args...>) {
-    static_cast<Dp*>(this)->_M_payload._M_construct(std::forward<Args>(args)...);
+  constexpr void construct(Args&&... args) noexcept(std::is_nothrow_constructible_v<StoredType, Args...>) {
+    static_cast<Dp*>(this)->payload.construct(std::forward<Args>(args)...);
   }
 
-  constexpr void m_destruct() noexcept { static_cast<Dp*>(this)->_M_payload._M_destroy(); }
+  constexpr void destruct() noexcept { static_cast<Dp*>(this)->payload.destroy(); }
 
   // _M_reset is a 'safe' operation with no precondition.
-  constexpr void m_reset() noexcept { static_cast<Dp*>(this)->_M_payload._M_reset(); }
+  constexpr void reset() noexcept { static_cast<Dp*>(this)->payload.reset(); }
 
-  [[nodiscard]] constexpr auto m_is_engaged() const noexcept -> bool {
-    return static_cast<const Dp*>(this)->_M_payload._M_engaged;
+  [[nodiscard]] constexpr auto is_engaged() const noexcept -> bool {
+    return static_cast<const Dp*>(this)->payload.engaged;
   }
 
   // The _M_get operations have _M_engaged as a precondition.
-  constexpr auto m_get() noexcept -> Tp& {
-    __glibcxx_assert(this->m_is_engaged());
-    return static_cast<Dp*>(this)->_M_payload._M_get();
+  constexpr auto get() noexcept -> Tp& {
+    assert(this->is_engaged());
+    return static_cast<Dp*>(this)->payload.get();
   }
 
-  constexpr auto m_get() const noexcept -> const Tp& {
-    __glibcxx_assert(this->m_is_engaged());
-    return static_cast<const Dp*>(this)->_M_payload._M_get();
+  constexpr auto get() const noexcept -> const Tp& {
+    assert(this->is_engaged());
+    return static_cast<const Dp*>(this)->payload.get();
   }
 };
 
@@ -343,24 +344,24 @@ struct OptionalBase : OptionalBaseImpl<Tp, OptionalBase<Tp>> {
   template <typename... Args>
     requires(std::is_constructible_v<Tp, Args...>)
   constexpr explicit OptionalBase(std::in_place_t /*unused*/, Args&&... args)
-      : M_payload(std::in_place, std::forward<Args>(args)...) {}
+      : payload(std::in_place, std::forward<Args>(args)...) {}
 
   template <typename Up, typename... Args>
     requires(std::is_constructible_v<Tp, std::initializer_list<Up>&, Args...>)
   constexpr explicit OptionalBase(std::in_place_t /*unused*/, std::initializer_list<Up> il, Args&&... args)
-      : M_payload(std::in_place, il, std::forward<Args>(args)...) {}
+      : payload(std::in_place, il, std::forward<Args>(args)...) {}
 
   // Copy and move constructors.
-  constexpr OptionalBase(const OptionalBase& other) : M_payload(other.M_payload._M_engaged, other.M_payload) {}
+  constexpr OptionalBase(const OptionalBase& other) : payload(other.payload.engaged, other.payload) {}
 
   constexpr OptionalBase(OptionalBase&& other) noexcept(std::is_nothrow_move_constructible_v<Tp>)
-      : M_payload(other.M_payload._M_engaged, std::move(other.M_payload)) {}
+      : payload(other.payload.engaged, std::move(other.payload)) {}
 
   // Assignment operators.
   auto operator=(const OptionalBase&) -> OptionalBase& = default;
   auto operator=(OptionalBase&&) -> OptionalBase& = default;
 
-  OptionalPayload<Tp> M_payload;
+  OptionalPayload<Tp> payload;
 };
 
 template <typename Tp>
@@ -372,15 +373,15 @@ struct OptionalBase<Tp, false, true> : OptionalBaseImpl<Tp, OptionalBase<Tp>> {
   template <typename... Args>
     requires(std::is_constructible_v<Tp, Args...>)
   constexpr explicit OptionalBase(std::in_place_t /*unused*/, Args&&... args)
-      : M_payload(std::in_place, std::forward<Args>(args)...) {}
+      : payload(std::in_place, std::forward<Args>(args)...) {}
 
   template <typename Up, typename... Args>
     requires(std::is_constructible_v<Tp, std::initializer_list<Up>&, Args...>)
   constexpr explicit OptionalBase(std::in_place_t /*unused*/, std::initializer_list<Up> il, Args... args)
-      : M_payload(std::in_place, il, std::forward<Args>(args)...) {}
+      : payload(std::in_place, il, std::forward<Args>(args)...) {}
 
   // Copy and move constructors.
-  constexpr OptionalBase(const OptionalBase& other) : M_payload(other.M_payload._M_engaged, other.M_payload) {}
+  constexpr OptionalBase(const OptionalBase& other) : payload(other.payload.engaged, other.payload) {}
 
   constexpr OptionalBase(OptionalBase&& other) = default;
 
@@ -388,7 +389,7 @@ struct OptionalBase<Tp, false, true> : OptionalBaseImpl<Tp, OptionalBase<Tp>> {
   auto operator=(const OptionalBase&) -> OptionalBase& = default;
   auto operator=(OptionalBase&&) -> OptionalBase& = default;
 
-  OptionalPayload<Tp> M_payload;
+  OptionalPayload<Tp> payload;
 };
 
 template <typename Tp>
@@ -400,24 +401,24 @@ struct OptionalBase<Tp, true, false> : OptionalBaseImpl<Tp, OptionalBase<Tp>> {
   template <typename... Args>
     requires(std::is_constructible_v<Tp, Args...>)
   constexpr explicit OptionalBase(std::in_place_t /*unused*/, Args&&... args)
-      : M_payload(std::in_place, std::forward<Args>(args)...) {}
+      : payload(std::in_place, std::forward<Args>(args)...) {}
 
   template <typename Up, typename... Args>
     requires(std::is_constructible_v<Tp, std::initializer_list<Up>&, Args...>)
   constexpr explicit OptionalBase(std::in_place_t /*unused*/, std::initializer_list<Up> il, Args&&... args)
-      : M_payload(std::in_place, il, std::forward<Args>(args)...) {}
+      : payload(std::in_place, il, std::forward<Args>(args)...) {}
 
   // Copy and move constructors.
   constexpr OptionalBase(const OptionalBase& other) = default;
 
   constexpr OptionalBase(OptionalBase&& other) noexcept(std::is_nothrow_move_constructible_v<Tp>)
-      : M_payload(other.M_payload._M_engaged, std::move(other.M_payload)) {}
+      : payload(other.payload.engaged, std::move(other.payload)) {}
 
   // Assignment operators.
   auto operator=(const OptionalBase&) -> OptionalBase& = default;
   auto operator=(OptionalBase&&) -> OptionalBase& = default;
 
-  OptionalPayload<Tp> M_payload;
+  OptionalPayload<Tp> payload;
 };
 
 template <typename Tp>
@@ -429,12 +430,12 @@ struct OptionalBase<Tp, true, true> : OptionalBaseImpl<Tp, OptionalBase<Tp>> {
   template <typename... Args>
     requires(std::is_constructible_v<Tp, Args...>)
   constexpr explicit OptionalBase(std::in_place_t /*unused*/, Args&&... args)
-      : M_payload(std::in_place, std::forward<Args>(args)...) {}
+      : payload(std::in_place, std::forward<Args>(args)...) {}
 
   template <typename Up, typename... Args>
     requires(std::is_constructible_v<Tp, std::initializer_list<Up>&, Args...>)
   constexpr explicit OptionalBase(std::in_place_t /*unused*/, std::initializer_list<Up> il, Args&&... args)
-      : M_payload(std::in_place, il, std::forward<Args>(args)...) {}
+      : payload(std::in_place, il, std::forward<Args>(args)...) {}
 
   // Copy and move constructors.
   constexpr OptionalBase(const OptionalBase& other) = default;
@@ -444,7 +445,7 @@ struct OptionalBase<Tp, true, true> : OptionalBaseImpl<Tp, OptionalBase<Tp>> {
   auto operator=(const OptionalBase&) -> OptionalBase& = default;
   auto operator=(OptionalBase&&) -> OptionalBase& = default;
 
-  OptionalPayload<Tp> M_payload;
+  OptionalPayload<Tp> payload;
 };
 
 template <typename Tp>
@@ -581,7 +582,7 @@ class Optional : private OptionalBase<Tp>,
 
   // Assignment operators.
   constexpr auto operator=(std::nullopt_t /*unused*/) noexcept -> Optional& {
-    this->m_reset();
+    this->reset();
     return *this;
   }
 
@@ -591,10 +592,10 @@ class Optional : private OptionalBase<Tp>,
                                 std::is_constructible<Tp, Up>, std::is_assignable<Tp&, Up>>)
   constexpr auto operator=(Up&& u) noexcept(
       std::conjunction_v<std::is_nothrow_constructible<Tp, Up>, std::is_nothrow_assignable<Tp&, Up>>) -> Optional& {
-    if (this->m_is_engaged())
-      this->m_get() = std::forward<Up>(u);
+    if (this->is_engaged())
+      this->get() = std::forward<Up>(u);
     else
-      this->m_construct(std::forward<Up>(u));
+      this->construct(std::forward<Up>(u));
 
     return *this;
   }
@@ -607,12 +608,12 @@ class Optional : private OptionalBase<Tp>,
       std::conjunction_v<std::is_nothrow_constructible<Tp, const Up&>, std::is_nothrow_assignable<Tp&, const Up&>>)
       -> Optional& {
     if (u) {
-      if (this->m_is_engaged())
-        this->m_get() = *u;
+      if (this->is_engaged())
+        this->get() = *u;
       else
-        this->m_construct(*u);
+        this->construct(*u);
     } else {
-      this->m_reset();
+      this->reset();
     }
     return *this;
   }
@@ -624,12 +625,12 @@ class Optional : private OptionalBase<Tp>,
   constexpr auto operator=(Optional<Up>&& u) noexcept(
       std::conjunction_v<std::is_nothrow_constructible<Tp, Up>, std::is_nothrow_assignable<Tp&, Up>>) -> Optional& {
     if (u) {
-      if (this->m_is_engaged())
-        this->m_get() = std::move(*u);
+      if (this->is_engaged())
+        this->get() = std::move(*u);
       else
-        this->m_construct(std::move(*u));
+        this->construct(std::move(*u));
     } else {
-      this->m_reset();
+      this->reset();
     }
 
     return *this;
@@ -638,9 +639,9 @@ class Optional : private OptionalBase<Tp>,
   template <typename... Args>
     requires(std::is_constructible_v<Tp, Args...>)
   constexpr auto emplace(Args&&... args) noexcept(std::is_nothrow_constructible_v<Tp, Args...>) -> Tp& {
-    this->m_reset();
-    this->m_construct(std::forward<Args>(args)...);
-    return this->m_get();
+    this->reset();
+    this->construct(std::forward<Args>(args)...);
+    return this->get();
   }
 
   template <typename Up, typename... Args>
@@ -648,9 +649,9 @@ class Optional : private OptionalBase<Tp>,
       std::is_nothrow_constructible_v<Tp, std::initializer_list<Up>&, Args...>) -> Tp&
     requires(std::is_constructible_v<Tp, std::initializer_list<Up>&, Args...>)
   {
-    this->m_reset();
-    this->m_construct(il, std::forward<Args>(args)...);
-    return this->m_get();
+    this->reset();
+    this->construct(il, std::forward<Args>(args)...);
+    return this->get();
   }
 
   // Destructor is implicit, implemented in _Optional_base.
@@ -660,51 +661,51 @@ class Optional : private OptionalBase<Tp>,
                                                 std::is_nothrow_swappable_v<Tp>) {
     using std::swap;
 
-    if (this->m_is_engaged() && other.m_is_engaged())
-      swap(this->m_get(), other.m_get());
-    else if (this->m_is_engaged()) {
-      other.m_construct(std::move(this->m_get()));
-      this->m_destruct();
-    } else if (other.m_is_engaged()) {
-      this->m_construct(std::move(other.m_get()));
-      other.m_destruct();
+    if (this->is_engaged() && other.is_engaged())
+      swap(this->get(), other.get());
+    else if (this->is_engaged()) {
+      other.construct(std::move(this->get()));
+      this->destruct();
+    } else if (other.is_engaged()) {
+      this->construct(std::move(other.get()));
+      other.destruct();
     }
   }
 
   // Observers.
-  constexpr auto operator->() const noexcept -> const Tp* { return std::addressof(this->m_get()); }
+  constexpr auto operator->() const noexcept -> const Tp* { return std::addressof(this->get()); }
 
-  constexpr auto operator->() noexcept -> Tp* { return std::addressof(this->m_get()); }
+  constexpr auto operator->() noexcept -> Tp* { return std::addressof(this->get()); }
 
-  constexpr auto operator*() const& noexcept -> const Tp& { return this->m_get(); }
+  constexpr auto operator*() const& noexcept -> const Tp& { return this->get(); }
 
-  constexpr auto operator*() & noexcept -> Tp& { return this->m_get(); }
+  constexpr auto operator*() & noexcept -> Tp& { return this->get(); }
 
-  constexpr auto operator*() && noexcept -> Tp&& { return std::move(this->m_get()); }
+  constexpr auto operator*() && noexcept -> Tp&& { return std::move(this->get()); }
 
-  constexpr auto operator*() const&& noexcept -> const Tp&& { return std::move(this->m_get()); }
+  constexpr auto operator*() const&& noexcept -> const Tp&& { return std::move(this->get()); }
 
-  constexpr explicit operator bool() const noexcept { return this->m_is_engaged(); }
+  constexpr explicit operator bool() const noexcept { return this->is_engaged(); }
 
-  [[nodiscard]] constexpr auto has_value() const noexcept -> bool { return this->m_is_engaged(); }
+  [[nodiscard]] constexpr auto has_value() const noexcept -> bool { return this->is_engaged(); }
 
   constexpr auto value() const& -> const Tp& {
-    if (this->m_is_engaged()) return this->m_get();
+    if (this->is_engaged()) return this->get();
     throw_bad_optional_access();
   }
 
   constexpr auto value() & -> Tp& {
-    if (this->m_is_engaged()) return this->m_get();
+    if (this->is_engaged()) return this->get();
     throw_bad_optional_access();
   }
 
   constexpr auto value() && -> Tp&& {
-    if (this->m_is_engaged()) return std::move(this->m_get());
+    if (this->is_engaged()) return std::move(this->get());
     throw_bad_optional_access();
   }
 
   constexpr auto value() const&& -> const Tp&& {
-    if (this->m_is_engaged()) return std::move(this->m_get());
+    if (this->is_engaged()) return std::move(this->get());
     throw_bad_optional_access();
   }
 
@@ -713,7 +714,7 @@ class Optional : private OptionalBase<Tp>,
     static_assert(std::is_copy_constructible_v<Tp>);
     static_assert(std::is_convertible_v<Up&&, Tp>);
 
-    if (this->m_is_engaged()) return this->m_get();
+    if (this->is_engaged()) return this->get();
     return static_cast<Tp>(std::forward<Up>(u));
   }
 
@@ -722,7 +723,7 @@ class Optional : private OptionalBase<Tp>,
     static_assert(std::is_move_constructible_v<Tp>);
     static_assert(std::is_convertible_v<Up&&, Tp>);
 
-    if (this->m_is_engaged()) return std::move(this->m_get());
+    if (this->is_engaged()) return std::move(this->get());
     return static_cast<Tp>(std::forward<Up>(u));
   }
 
@@ -732,8 +733,7 @@ class Optional : private OptionalBase<Tp>,
   constexpr auto and_then(Fn&& f) & {
     using Up = std::remove_cvref_t<std::invoke_result_t<Fn, Tp&>>;
     static_assert(is_optional_v<std::remove_cvref_t<Up>>,
-                  "the function passed to std::optional<T>::and_then "
-                  "must return a std::optional");
+                  "the function passed to std::optional<T>::and_then must return a std::optional");
     if (has_value()) return std::invoke(std::forward<Fn>(f), **this);
     return Up();
   }
@@ -741,9 +741,7 @@ class Optional : private OptionalBase<Tp>,
   template <typename Fn>
   constexpr auto and_then(Fn&& f) const& {
     using Up = std::remove_cvref_t<std::invoke_result_t<Fn, const Tp&>>;
-    static_assert(is_optional_v<Up>,
-                  "the function passed to std::optional<T>::and_then "
-                  "must return a std::optional");
+    static_assert(is_optional_v<Up>, "the function passed to std::optional<T>::and_then must return a std::optional");
     if (has_value()) return std::invoke(std::forward<Fn>(f), **this);
     return Up();
   }
@@ -752,8 +750,7 @@ class Optional : private OptionalBase<Tp>,
   constexpr auto and_then(Fn&& f) && {
     using Up = std::remove_cvref_t<std::invoke_result_t<Fn, Tp>>;
     static_assert(is_optional_v<std::remove_cvref_t<Up>>,
-                  "the function passed to std::optional<T>::and_then "
-                  "must return a std::optional");
+                  "the function passed to std::optional<T>::and_then must return a std::optional");
     if (has_value()) return std::invoke(std::forward<Fn>(f), std::move(**this));
     return Up();
   }
@@ -762,8 +759,7 @@ class Optional : private OptionalBase<Tp>,
   constexpr auto and_then(Fn&& f) const&& {
     using Up = std::remove_cvref_t<std::invoke_result_t<Fn, const Tp>>;
     static_assert(is_optional_v<std::remove_cvref_t<Up>>,
-                  "the function passed to std::optional<T>::and_then "
-                  "must return a std::optional");
+                  "the function passed to std::optional<T>::and_then must return a std::optional");
     if (has_value()) return std::invoke(std::forward<Fn>(f), std::move(**this));
     return Up();
   }
@@ -801,8 +797,7 @@ class Optional : private OptionalBase<Tp>,
   constexpr auto or_else(Fn&& f) const& -> Optional {
     using Up = std::invoke_result_t<Fn>;
     static_assert(std::is_same_v<std::remove_cvref_t<Up>, Optional>,
-                  "the function passed to std::optional<T>::or_else "
-                  "must return a std::optional<T>");
+                  "the function passed to std::optional<T>::or_else must return a std::optional<T>");
 
     if (has_value()) return *this;
     return std::forward<Fn>(f)();
@@ -813,14 +808,13 @@ class Optional : private OptionalBase<Tp>,
   constexpr auto or_else(Fn&& f) && -> Optional {
     using Up = std::invoke_result_t<Fn>;
     static_assert(std::is_same_v<std::remove_cvref_t<Up>, Optional>,
-                  "the function passed to std::optional<T>::or_else "
-                  "must return a std::optional<T>");
+                  "the function passed to std::optional<T>::or_else must return a std::optional<T>");
 
     if (has_value()) return std::move(*this);
     return std::forward<Fn>(f)();
   }
 
-  constexpr void reset() noexcept { this->m_reset(); }
+  constexpr void reset() noexcept { this->reset(); }
 
  private:
   template <typename Up>
@@ -1026,7 +1020,7 @@ Optional(Tp) -> Optional<Tp>;
 namespace std {
 
 template <typename Tp>
-struct hash<nostd::Optional<Tp>> : private __poison_hash<remove_const_t<Tp>>, public __optional_hash_call_base<Tp> {};
+struct hash<nostd::Optional<Tp>> : private __poison_hash<remove_const_t<Tp>>, public nostd::OptionalHashCallBase<Tp> {};
 
 template <typename Tp>
 struct __is_fast_hash<std::hash<nostd::Optional<Tp>>> : std::__is_fast_hash<std::hash<Tp>> {};
