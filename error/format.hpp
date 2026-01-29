@@ -28,43 +28,25 @@
 
 #pragma once
 
-#include <bits/requires_hosted.h>  // for std::string
-
-#include <cstdint>
-#include <utility>
-
-#define __glibcxx_want_format
-#define __glibcxx_want_format_ranges
-#define __glibcxx_want_format_uchar
-
-#include <bits/ranges_algobase.h>
-#include <bits/ranges_base.h>   // input_range, range_reference_t
-#include <bits/ranges_util.h>   // subrange
-#include <bits/stl_iterator.h>  // back_insert_iterator
-#include <bits/stl_pair.h>      // __is_pair
-#include <bits/unicode.h>       // __is_scalar_value, _Utf_view, etc.
-#include <bits/utility.h>       // tuple_size_v
-#include <bits/version.h>
-
 #include <algorithm>  // ranges::copy
 #include <array>
 #include <cassert>
+#include <cctype>
 #include <charconv>
 #include <concepts>
-#include <ext/numeric_traits.h>  // __int_traits
+#include <cstdint>
+#include <cstring>
 #include <limits>
 #include <locale>
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <variant>  // monostate
 #include <vector>
 
-#if !__has_builtin(__builtin_toupper)
-#include <cctype>
-#endif
-
-namespace std _GLIBCXX_VISIBILITY(default) {
+namespace nostd {
 
 // [format.context], class template basic_format_context
 template <typename Out, typename CharT>
@@ -76,11 +58,12 @@ struct BasicFormatString;
 
 /// @cond undocumented
 namespace detail {
+
 // Type-erased character sink.
 template <typename CharT>
 class Sink;
 
-// Output iterator that writes to a type-erase character sink.
+// Output iterator that writes to a type-erased character sink.
 template <typename CharT>
 class SinkIter;
 
@@ -90,17 +73,17 @@ using format_context = BasicFormatContext<SinkIter<CharT>, CharT>;
 template <typename CharT>
 struct RuntimeFormatString {
   [[__gnu__::__always_inline__]]
-  explicit RuntimeFormatString(basic_string_view<CharT> s) noexcept
+  explicit RuntimeFormatString(std::basic_string_view<CharT> s) noexcept
       : str_(s) {}
 
   RuntimeFormatString(const RuntimeFormatString&) = delete;
   void operator=(const RuntimeFormatString&) = delete;
 
  private:
-  basic_string_view<CharT> str_;
+  std::basic_string_view<CharT> str_;
 
   template <typename, typename...>
-  friend struct std::BasicFormatString;
+  friend struct nostd::BasicFormatString;
 };
 
 }  // namespace detail
@@ -125,24 +108,24 @@ class BasicFormatArg;
 template <typename CharT, typename... Args>
 struct BasicFormatString {
   template <typename Tp>
-    requires convertible_to<const Tp&, basic_string_view<CharT>>
-  consteval explicit BasicFormatString(const Tp& s);
+    requires std::convertible_to<const Tp&, std::basic_string_view<CharT>>
+  consteval BasicFormatString(const Tp& s);  // NOLINT(google-explicit-constructor)
 
   [[__gnu__::__always_inline__]]
   explicit BasicFormatString(detail::RuntimeFormatString<CharT> s) noexcept
       : str_(s._M_str) {}
 
   [[__gnu__::__always_inline__]]
-  constexpr auto get() const noexcept -> basic_string_view<CharT> {
+  constexpr auto get() const noexcept -> std::basic_string_view<CharT> {
     return str_;
   }
 
  private:
-  basic_string_view<CharT> str_;
+  std::basic_string_view<CharT> str_;
 };
 
 template <typename... Args>
-using format_string = BasicFormatString<char, type_identity_t<Args>...>;
+using format_string = BasicFormatString<char, std::type_identity_t<Args>...>;
 
 // [format.formatter], formatter
 
@@ -155,43 +138,43 @@ struct Formatter {
 };
 
 // [format.error], class format_error
-class FormatError : public runtime_error {
+class FormatError : public std::runtime_error {
  public:
-  explicit FormatError(const string& what) : runtime_error(what) {}
+  explicit FormatError(const std::string& what) : runtime_error(what) {}
   explicit FormatError(const char* what) : runtime_error(what) {}
 };
 
 /// @cond undocumented
 [[noreturn]]
-inline void throw_format_error(const char* what) {
-  _GLIBCXX_THROW_OR_ABORT(FormatError(what));
+constexpr void throw_format_error(const char* what) {
+  throw FormatError{what};
 }
 
 namespace detail {
 // XXX use named functions for each constexpr error?
 
 [[noreturn]]
-inline void unmatched_left_brace_in_format_string() {
+constexpr void unmatched_left_brace_in_format_string() {
   throw_format_error("format error: unmatched '{' in format string");
 }
 
 [[noreturn]]
-inline void unmatched_right_brace_in_format_string() {
+constexpr void unmatched_right_brace_in_format_string() {
   throw_format_error("format error: unmatched '}' in format string");
 }
 
 [[noreturn]]
-inline void conflicting_indexing_in_format_string() {
+constexpr void conflicting_indexing_in_format_string() {
   throw_format_error("format error: conflicting indexing style in format string");
 }
 
 [[noreturn]]
-inline void invalid_arg_id_in_format_string() {
+constexpr void invalid_arg_id_in_format_string() {
   throw_format_error("format error: invalid arg-id in format string");
 }
 
 [[noreturn]]
-inline void failed_to_parse_format_spec() {
+constexpr void failed_to_parse_format_spec() {
   throw_format_error("format error: failed to parse format-spec");
 }
 
@@ -207,10 +190,10 @@ template <typename CharT>
 class BasicFormatParseContext {
  public:
   using char_type = CharT;
-  using const_iterator = typename basic_string_view<CharT>::const_iterator;
+  using const_iterator = typename std::basic_string_view<CharT>::const_iterator;
   using iterator = const_iterator;
 
-  constexpr explicit BasicFormatParseContext(basic_string_view<CharT> fmt, size_t num_args = 0) noexcept
+  constexpr explicit BasicFormatParseContext(std::basic_string_view<CharT> fmt, size_t num_args = 0) noexcept
       : begin_(fmt.begin()), end_(fmt.end()), num_args_(num_args) {}
 
   BasicFormatParseContext(const BasicFormatParseContext&) = delete;
@@ -256,16 +239,17 @@ template <template <typename...> class Class, typename... Args>
 static constexpr bool is_specialization_of<Class<Args...>, Class> = true;
 
 namespace detail {
+
 // pre: first != last
 template <typename CharT>
-constexpr auto parse_integer(const CharT* first, const CharT* last) -> pair<uint16_t, const CharT*> {
-  if (first == last) __builtin_unreachable();
+constexpr auto parse_integer(const CharT* first, const CharT* last) -> std::pair<uint16_t, const CharT*> {
+  if (first == last) std::unreachable();
 
-  if constexpr (is_same_v<CharT, char>) {
+  if constexpr (std::is_same_v<CharT, char>) {
     const auto start = first;
     uint16_t val = 0;
     // N.B. std::from_chars is not constexpr in C++20.
-    if (__detail::__from_chars_alnum<true>(first, last, val, 10) && first != start) [[likely]]
+    if (std::from_chars(first, last, val, 10).ec == std::errc{} && first != start) [[likely]]
       return {val, first};
   } else {
     constexpr int n = 32;
@@ -279,7 +263,7 @@ constexpr auto parse_integer(const CharT* first, const CharT* last) -> pair<uint
 }
 
 template <typename CharT>
-constexpr auto parse_arg_id(const CharT* first, const CharT* last) -> pair<uint16_t, const CharT*> {
+constexpr auto parse_arg_id(const CharT* first, const CharT* last) -> std::pair<uint16_t, const CharT*> {
   if (first == last) std::unreachable();
 
   if (*first == '0') return {0, first + 1};  // No leading zeros allowed, so '0...' == 0
@@ -300,23 +284,23 @@ enum class PresType : std::uint8_t {
   None = 0,  // Default type (not valid for integer presentation types).
   // Presentation types for integral types (including bool and charT).
   d = 1,
-  b,
-  B,
-  o,
-  x,
-  X,
-  c,
+  b = 2,
+  B = 3,
+  o = 4,
+  x = 5,
+  X = 6,
+  c = 7,
   // Presentation types for floating-point types.
   a = 1,
-  A,
-  e,
-  E,
-  f,
-  F,
-  g,
-  G,
+  A = 2,
+  e = 3,
+  E = 4,
+  f = 5,
+  F = 6,
+  g = 7,
+  G = 8,
   p = 0,
-  P,          // For pointers.
+  P = 1,      // For pointers.
   s = 0,      // For strings and bool.
   Esc = 0xf,  // For strings and charT.
 };
@@ -332,9 +316,14 @@ enum class Align : std::uint8_t {
 enum class Sign : std::uint8_t {
   Default,
   Plus,
-  Minus,  // XXX does this need to be distinct from _Sign_default?
+  Minus,  // XXX does this need to be distinct from Default?
   Space,
 };
+
+template <std::integral Int>
+constexpr auto operator||(Sign lhs, Int rhs) -> bool {
+  return static_cast<std::underlying_type_t<Sign>>(lhs) || rhs;
+}
 
 enum class WidthPrec : std::uint8_t {
   None,    // No width/prec specified.
@@ -343,7 +332,7 @@ enum class WidthPrec : std::uint8_t {
 };
 
 template <typename Context>
-auto int_from_arg(const BasicFormatArg<Context>& arg) -> size_t;
+constexpr auto int_from_arg(const BasicFormatArg<Context>& arg) -> size_t;
 
 constexpr auto is_digit(char c) -> bool { return '0' <= c && c <= '9'; }
 
@@ -365,7 +354,7 @@ struct Spec {
   uint16_t prec;
   char32_t fill = ' ';
 
-  using iterator = typename basic_string_view<CharT>::iterator;
+  using iterator = typename std::basic_string_view<CharT>::iterator;
 
   static constexpr auto parse_align(CharT c) noexcept -> Align {
     switch (c) {
@@ -383,22 +372,7 @@ struct Spec {
   // pre: __first != __last
   constexpr auto parse_fill_and_align(iterator first, iterator last) noexcept -> iterator {
     if (*first != '{') {
-      if constexpr (__unicode::__literal_encoding_is_unicode<CharT>()) {
-        // Accept any UCS scalar value as fill character.
-        __unicode::_Utf32_view<ranges::subrange<iterator>> uv({first, last});
-        if (!uv.empty()) {
-          auto beg = uv.begin();
-          char32_t c = *beg++;
-          if (__unicode::__is_scalar_value(c)) {
-            if (const auto* next = beg.base(); next != last)
-              if (Align alignment = parse_align(*next); alignment != Align::Default) {
-                fill = c;
-                align = alignment;
-                return ++next;
-              }
-          }
-        }
-      } else if (last - first >= 2) {
+      if (last - first >= 2) {
         if (Align alignment = parse_align(first[1]); alignment != Align::Default) {
           fill = *first;
           align = alignment;
@@ -484,9 +458,9 @@ struct Spec {
 
   // pre: __first != __last
   constexpr auto parse_width(iterator first, iterator last, BasicFormatParseContext<CharT>& pc) -> iterator {
-    bool arg_id = false;
     if (*first == '0') throw_format_error("format error: width must be non-zero in format string");
 
+    bool arg_id = false;
     auto next = parse_width_or_precision(first, last, width, arg_id, pc);
     if (next != first) width_kind = arg_id ? WidthPrec::FromArg : WidthPrec::Value;
     return next;
@@ -515,7 +489,7 @@ struct Spec {
   }
 
   template <typename Context>
-  auto get_width(Context& ctx) const -> size_t {
+  constexpr auto get_width(Context& ctx) const -> size_t {
     switch (width_kind) {
       case WidthPrec::Value:
         return width;
@@ -524,23 +498,25 @@ struct Spec {
       case WidthPrec::None:
         return 0;
     }
+    std::unreachable();
   }
 
   template <typename Context>
-  auto get_precision(Context& ctx) const -> size_t {
+  constexpr auto get_precision(Context& ctx) const -> size_t {
     switch (prec_kind) {
       case WidthPrec::Value:
         return prec;
       case WidthPrec::FromArg:
         return detail::int_from_arg(ctx.arg(prec));
       case WidthPrec::None:
-        return numeric_limits<size_t>::max();
+        return std::numeric_limits<size_t>::max();
     }
+    std::unreachable();
   }
 };
 
 template <typename Int>
-inline auto put_sign(Int i, Sign sign, char* dest) noexcept -> char* {
+constexpr auto put_sign(Int i, Sign sign, char* dest) noexcept -> char* {
   if (i < 0)
     *dest = '-';
   else if (sign == Sign::Plus)
@@ -554,9 +530,9 @@ inline auto put_sign(Int i, Sign sign, char* dest) noexcept -> char* {
 
 // Write STR to OUT (and do so efficiently if OUT is a SinkIter).
 template <typename Out, typename CharT>
-  requires output_iterator<Out, const CharT&>
-inline auto write(Out out, basic_string_view<CharT> str) -> Out {
-  if constexpr (is_same_v<Out, SinkIter<CharT>>) {
+  requires std::output_iterator<Out, const CharT&>
+constexpr auto write(Out out, std::basic_string_view<CharT> str) -> Out {
+  if constexpr (std::is_same_v<Out, SinkIter<CharT>>) {
     if (!str.empty()) out = str;
   } else {
     for (CharT c : str) *out++ = c;
@@ -565,13 +541,16 @@ inline auto write(Out out, basic_string_view<CharT> str) -> Out {
 }
 
 // Write STR to OUT with NFILL copies of FILL_CHAR specified by ALIGN.
-// pre: __align != _Align_default
+// pre: align != Align::Default
 template <typename Out, typename CharT>
-auto write_padded(Out out, basic_string_view<CharT> str, Align align, size_t nfill, char32_t fill_char) -> Out {
-  const size_t buflen = 0x20;
+constexpr auto write_padded(Out out, std::basic_string_view<CharT> str, Align align, size_t nfill, char32_t fill_char)
+    -> Out {
+  assert(align != Align::Default);
+
+  constexpr size_t buflen = 32;
   std::array<CharT, buflen> padding_chars;
-  padding_chars[0] = CharT();
-  basic_string_view<CharT> padding{padding_chars.data(), padding_chars.size()};
+  padding_chars[0] = CharT{};
+  std::basic_string_view<CharT> padding{padding_chars.data(), padding_chars.size()};
 
   auto pad = [&padding](size_t n, Out& o) -> auto {
     if (n == 0) return;
@@ -585,18 +564,24 @@ auto write_padded(Out out, basic_string_view<CharT> str, Align align, size_t nfi
   size_t l;
   size_t r;
   size_t max;
-  if (align == Align::Centre) {
-    l = nfill / 2;
-    r = l + (nfill & 1);
-    max = r;
-  } else if (align == Align::Right) {
-    l = nfill;
-    r = 0;
-    max = l;
-  } else {
-    l = 0;
-    r = nfill;
-    max = r;
+  switch (align) {
+    case Align::Centre:
+      l = nfill / 2;
+      r = l + (nfill & 1);
+      max = r;
+      break;
+    case Align::Right:
+      l = nfill;
+      r = 0;
+      max = l;
+      break;
+    case Align::Left:
+      l = 0;
+      r = nfill;
+      max = r;
+      break;
+    default:
+      std::unreachable();
   }
 
   if (max < buflen)
@@ -604,7 +589,7 @@ auto write_padded(Out out, basic_string_view<CharT> str, Align align, size_t nfi
   else
     max = buflen;
 
-  char_traits<CharT>::assign(padding_chars.data(), max, fill_char);
+  std::char_traits<CharT>::assign(padding_chars.data(), max, fill_char);
   pad(l, out);
   out = detail::write(std::move(out), str);
   pad(r, out);
@@ -613,34 +598,33 @@ auto write_padded(Out out, basic_string_view<CharT> str, Align align, size_t nfi
 }
 
 // Write STR to OUT, with alignment and padding as determined by SPEC.
-// pre: __spec._M_align != _Align_default || __align != _Align_default
+// pre: spec.align != Align::Default || align != Align::Default
 template <typename CharT, typename Out>
-auto write_padded_as_spec(basic_string_view<type_identity_t<CharT>> str, size_t estimated_width,
-                          BasicFormatContext<Out, CharT>& fc, const Spec<CharT>& spec, Align alignement = Align::Left)
-    -> Out {
-  size_t width = spec.get_width(fc);
+constexpr auto write_padded_as_spec(std::basic_string_view<std::type_identity_t<CharT>> str,
+                                    std::size_t estimated_width, BasicFormatContext<Out, CharT>& ctx,
+                                    const Spec<CharT>& spec, Align alignement = Align::Left) -> Out {
+  size_t width = spec.get_width(ctx);
 
-  if (width <= estimated_width) return detail::write(fc.out(), str);
+  if (width <= estimated_width) return detail::write(ctx.out(), str);
 
   const size_t nfill = width - estimated_width;
 
   if (spec.align != Align::Default) alignement = spec.align;
 
-  return detail::write_padded(fc.out(), str, alignement, nfill, spec.fill);
+  return detail::write_padded(ctx.out(), str, alignement, nfill, spec.fill);
 }
 
 // A lightweight optional<locale>.
 struct OptionalLocale {
-  [[__gnu__::__always_inline__]]
-  OptionalLocale() = default;
+  constexpr OptionalLocale() = default;
 
-  explicit OptionalLocale(const locale& loc) noexcept : loc(loc), hasval(true) {}
+  constexpr explicit OptionalLocale(const std::locale& loc) noexcept : loc(loc), hasval(true) {}
 
-  OptionalLocale(const OptionalLocale& l) noexcept : hasval(l.hasval) {
+  constexpr OptionalLocale(const OptionalLocale& l) noexcept : hasval(l.hasval) {
     if (hasval) std::construct_at(&loc, l.loc);
   }
 
-  auto operator=(const OptionalLocale& l) noexcept -> OptionalLocale& {
+  constexpr auto operator=(const OptionalLocale& l) noexcept -> OptionalLocale& {
     if (hasval) {
       if (l.hasval)
         loc = l.loc;
@@ -655,11 +639,11 @@ struct OptionalLocale {
     return *this;
   }
 
-  ~OptionalLocale() {
+  constexpr ~OptionalLocale() {
     if (hasval) loc.~locale();
   }
 
-  auto operator=(locale&& iloc) noexcept -> OptionalLocale& {
+  constexpr auto operator=(std::locale&& iloc) noexcept -> OptionalLocale& {
     if (hasval)
       loc = iloc;
     else {
@@ -669,7 +653,7 @@ struct OptionalLocale {
     return *this;
   }
 
-  auto value() noexcept -> const locale& {
+  constexpr auto value() noexcept -> const std::locale& {
     if (!hasval) {
       std::construct_at(&loc);
       hasval = true;
@@ -677,7 +661,7 @@ struct OptionalLocale {
     return loc;
   }
 
-  [[nodiscard]] auto has_value() const noexcept -> bool { return hasval; }
+  [[nodiscard]] constexpr auto has_value() const noexcept -> bool { return hasval; }
 
   union {
     char dummy = '\0';
@@ -696,7 +680,7 @@ struct FormatterStr {
     const auto last = pc.end();
     Spec<CharT> spec{};
 
-    auto finished = [&] -> auto {
+    auto finished = [&] -> bool {
       if (first == last || *first == '}') {
         spec_ = spec;
         return true;
@@ -728,26 +712,17 @@ struct FormatterStr {
   }
 
   template <typename Out>
-  auto format(basic_string_view<CharT> s, BasicFormatContext<Out, CharT>& fc) const -> Out {
+  constexpr auto format(std::basic_string_view<CharT> sv, BasicFormatContext<Out, CharT>& fc) const -> Out {
     if (spec_.type == PresType::Esc) {
       // TODO: C++23 escaped string presentation
     }
 
-    if (spec_.width_kind == WidthPrec::None && spec_.prec_kind == WidthPrec::None) return detail::write(fc.out(), s);
+    if (spec_.width_kind == WidthPrec::None && spec_.prec_kind == WidthPrec::None) return detail::write(fc.out(), sv);
 
-    size_t estimated_width;
-    if constexpr (__unicode::__literal_encoding_is_unicode<CharT>()) {
-      if (spec_.prec_kind != WidthPrec::None) {
-        size_t prec = spec_.get_precision(fc);
-        estimated_width = __unicode::__truncate(s, prec);
-      } else
-        estimated_width = __unicode::__field_width(s);
-    } else {
-      s = s.substr(0, spec_.get_precision(fc));
-      estimated_width = s.size();
-    }
+    sv = sv.substr(0, spec_.get_precision(fc));
+    std::size_t estimated_width = sv.size();
 
-    return detail::write_padded_as_spec(s, estimated_width, fc, spec_);
+    return detail::write_padded_as_spec(sv, estimated_width, fc, spec_);
   }
 
   constexpr void set_debug_format() noexcept { spec_.type = PresType::Esc; }
@@ -854,7 +829,7 @@ struct FormatterInt {
 
   template <typename Tp>
   constexpr auto parse(BasicFormatParseContext<CharT>& pc) -> typename BasicFormatParseContext<CharT>::iterator {
-    if constexpr (is_same_v<Tp, bool>) {
+    if constexpr (std::is_same_v<Tp, bool>) {
       auto end = do_parse(pc, as_bool);
       if (spec_.type == PresType::s)
         if (spec_.sign || spec_.alt || spec_.zero_fill)
@@ -865,20 +840,21 @@ struct FormatterInt {
       if (spec_.type == PresType::c || spec_.type == PresType::Esc)
         if (spec_.sign || spec_.alt || spec_.zero_fill
             /* XXX should be invalid? || _M_spec._M_localized */)
-          throw_format_error("format error: format-spec contains invalid formatting options for 'charT'");
+          throw_format_error("format error: format-spec contains invalid formatting options for 'char'");
       return end;
     } else
       return do_parse(pc, as_integer);
   }
 
   template <typename Int, typename Out>
-  auto format(Int i, BasicFormatContext<Out, CharT>& fc) const -> typename BasicFormatContext<Out, CharT>::iterator {
+  constexpr auto format(Int i, BasicFormatContext<Out, CharT>& fc) const ->
+      typename BasicFormatContext<Out, CharT>::iterator {
     if (spec_.type == PresType::c) return format_character(to_character(i), fc);
 
     std::array<char, (sizeof(Int) * __CHAR_BIT__) + 3> buf;
     std::to_chars_result res{};
 
-    string_view base_prefix;
+    std::string_view base_prefix;
     std::make_unsigned_t<Int> u;
     if (i < 0)
       u = -static_cast<decltype(u)>(i);
@@ -893,22 +869,22 @@ struct FormatterInt {
       case PresType::b:
       case PresType::B:
         base_prefix = spec_.type == PresType::b ? "0b" : "0B";
-        res = to_chars(start, end, u, 2);
+        res = std::to_chars(start, end, u, 2);
         break;
       case PresType::None:
         // Should not reach here with _Pres_none for bool or charT, so:
         [[fallthrough]];
       case PresType::d:
-        res = to_chars(start, end, u, 10);
+        res = std::to_chars(start, end, u, 10);
         break;
       case PresType::o:
         if (i != 0) base_prefix = "0";
-        res = to_chars(start, end, u, 8);
+        res = std::to_chars(start, end, u, 8);
         break;
       case PresType::x:
       case PresType::X:
         base_prefix = spec_.type == PresType::x ? "0x" : "0X";
-        res = to_chars(start, end, u, 16);
+        res = std::to_chars(start, end, u, 16);
         if (spec_.type == PresType::X)
           for (auto* p = start; p != res.ptr; ++p) *p = std::toupper(*p);
         break;
@@ -922,22 +898,23 @@ struct FormatterInt {
     }
     start = detail::put_sign(i, spec_.sign, start - 1);
 
-    return format_int(string_view(start, res.ptr - start), start_digits - start, fc);
+    return format_int(std::string_view(start, res.ptr - start), start_digits - start, fc);
   }
 
   template <typename Out>
-  auto format(bool i, BasicFormatContext<Out, CharT>& fc) const -> typename BasicFormatContext<Out, CharT>::iterator {
+  constexpr auto format(bool i, BasicFormatContext<Out, CharT>& fc) const ->
+      typename BasicFormatContext<Out, CharT>::iterator {
     if (spec_.type == PresType::c) return format_character(static_cast<unsigned char>(i), fc);
     if (spec_.type != PresType::s) return format(static_cast<unsigned char>(i), fc);
 
-    basic_string<CharT> s;
-    size_t est_width;
+    std::basic_string<CharT> s;
+    std::size_t est_width;
     if (spec_.localized) [[unlikely]] {
-      auto& np = std::use_facet<numpunct<CharT>>(fc.locale());
+      auto& np = std::use_facet<std::numpunct<CharT>>(fc.locale());
       s = i ? np.truename() : np.falsename();
       est_width = s.size();  // TODO Unicode-aware estimate
     } else {
-      if constexpr (is_same_v<char, CharT>)
+      if constexpr (std::is_same_v<char, CharT>)
         s = i ? "true" : "false";
       else
         s = i ? L"true" : L"false";
@@ -948,41 +925,45 @@ struct FormatterInt {
   }
 
   template <typename Out>
-  auto format_character(CharT c, BasicFormatContext<Out, CharT>& fc) const ->
+  constexpr auto format_character(CharT c, BasicFormatContext<Out, CharT>& fc) const ->
       typename BasicFormatContext<Out, CharT>::iterator {
     return detail::write_padded_as_spec({&c, 1U}, 1, fc, spec_);
   }
 
   template <typename Int>
-  static auto to_character(Int i) -> CharT {
+  static constexpr auto to_character(Int i) -> CharT {
+    using limits = std::numeric_limits<CharT>;
     using traits = __gnu_cxx::__int_traits<CharT>;
-    if constexpr (is_signed_v<Int> == is_signed_v<CharT>) {
+    static_assert(limits::max() == traits::__max && limits::min() == traits::__min,
+                  "std::numeric_limits<CharT> inconsistent with __int_traits<CharT>");
+
+    if constexpr (std::is_signed_v<Int> == std::is_signed_v<CharT>) {
       if (traits::__min <= i && i <= traits::__max) return static_cast<CharT>(i);
-    } else if constexpr (is_signed_v<Int>) {
-      if (i >= 0 && make_unsigned_t<Int>(i) <= traits::__max) return static_cast<CharT>(i);
-    } else if (i <= make_unsigned_t<CharT>(traits::__max))
+    } else if constexpr (std::is_signed_v<Int>) {
+      if (i >= 0 && std::make_unsigned_t<Int>(i) <= traits::__max) return static_cast<CharT>(i);
+    } else if (i <= std::make_unsigned_t<CharT>(traits::__max))
       return static_cast<CharT>(i);
     throw_format_error("format error: integer not representable as character");
   }
 
   template <typename Out>
-  auto format_int(string_view narrow_str, size_t prefix_len, BasicFormatContext<Out, CharT>& fc) const ->
+  constexpr auto format_int(std::string_view narrow_str, size_t prefix_len, BasicFormatContext<Out, CharT>& fc) const ->
       typename BasicFormatContext<Out, CharT>::iterator {
     size_t width = spec_.get_width(fc);
 
-    basic_string_view<CharT> str;
-    if constexpr (is_same_v<char, CharT>) str = narrow_str;
+    std::basic_string_view<CharT> str;
+    if constexpr (std::is_same_v<char, CharT>) str = narrow_str;
 
     if (spec_.localized) {
       const auto& l = fc.locale();
       if (l.name() != "C") {
-        auto& np = use_facet<numpunct<CharT>>(l);
-        string grp = np.grouping();
+        auto& np = use_facet<std::numpunct<CharT>>(l);
+        std::string grp = np.grouping();
         if (!grp.empty()) {
           size_t n = str.size() - prefix_len;
-          auto p = (CharT*)__builtin_alloca((2 * n * sizeof(CharT)) + prefix_len);
+          auto* p = std::bit_cast<CharT*>(__builtin_alloca((2 * n * sizeof(CharT)) + prefix_len));
           auto s = str.data();
-          char_traits<CharT>::copy(p, s, prefix_len);
+          std::char_traits<CharT>::copy(p, s, prefix_len);
           s += prefix_len;
           auto end = std::__add_grouping(p + prefix_len, np.thousands_sep(), grp.data(), grp.size(), s, s + n);
           str = {p, size_t(end - p)};
@@ -1018,12 +999,10 @@ struct FormatterInt {
   Spec<CharT> spec_{};
 };
 
-using std::to_chars;
-
 // We can format a floating-point type iff it is usable with to_chars.
 template <typename Tp>
-concept formattable_float = is_same_v<remove_cv_t<Tp>, Tp> &&
-                            requires(Tp t, char* p) { detail::to_chars(p, p, t, chars_format::scientific, 6); };
+concept formattable_float = std::is_same_v<std::remove_cv_t<Tp>, Tp> &&
+                            requires(Tp t, char* p) { std::to_chars(p, p, t, std::chars_format::scientific, 6); };
 
 template <Char CharT>
 struct FormatterFp {
@@ -1106,10 +1085,11 @@ struct FormatterFp {
   }
 
   template <typename Fp, typename Out>
-  auto format(Fp v, BasicFormatContext<Out, CharT>& fc) const -> typename BasicFormatContext<Out, CharT>::iterator {
+  constexpr auto format(Fp v, BasicFormatContext<Out, CharT>& fc) const ->
+      typename BasicFormatContext<Out, CharT>::iterator {
     std::string dynbuf;
     std::array<char, 128> buf;
-    to_chars_result res{};
+    std::to_chars_result res{};
 
     size_t prec = 6;
     bool use_prec = spec_.prec_kind != WidthPrec::None;
@@ -1118,7 +1098,7 @@ struct FormatterFp {
     char* start = buf.begin() + 1;  // reserve space for sign
     char* end = buf.end();
 
-    chars_format fmt{};
+    std::chars_format fmt{};
     bool upper = false;
     bool trailing_zeros = false;
     char expc = 'e';
@@ -1130,7 +1110,7 @@ struct FormatterFp {
         [[fallthrough]];
       case PresType::a:
         if (spec_.type != PresType::A) expc = 'p';
-        fmt = chars_format::hex;
+        fmt = std::chars_format::hex;
         break;
       case PresType::E:
         upper = true;
@@ -1138,14 +1118,14 @@ struct FormatterFp {
         [[fallthrough]];
       case PresType::e:
         use_prec = true;
-        fmt = chars_format::scientific;
+        fmt = std::chars_format::scientific;
         break;
       case PresType::F:
         upper = true;
         [[fallthrough]];
       case PresType::f:
         use_prec = true;
-        fmt = chars_format::fixed;
+        fmt = std::chars_format::fixed;
         break;
       case PresType::G:
         upper = true;
@@ -1154,44 +1134,44 @@ struct FormatterFp {
       case PresType::g:
         trailing_zeros = true;
         use_prec = true;
-        fmt = chars_format::general;
+        fmt = std::chars_format::general;
         break;
       case PresType::None:
-        if (use_prec) fmt = chars_format::general;
+        if (use_prec) fmt = std::chars_format::general;
         break;
       default:
-        __builtin_unreachable();
+        std::unreachable();
     }
 
     // Write value into buffer using std::to_chars.
     auto to_chars = [&](char* b, char* e) -> auto {
-      if (use_prec) return detail::to_chars(b, e, v, fmt, prec);
-      if (fmt != chars_format{}) return detail::to_chars(b, e, v, fmt);
-      return detail::to_chars(b, e, v);
+      if (use_prec) return std::to_chars(b, e, v, fmt, prec);
+      if (fmt != std::chars_format{}) return std::to_chars(b, e, v, fmt);
+      return std::to_chars(b, e, v);
     };
 
     // First try using stack buffer.
     res = to_chars(start, end);
 
-    if (__builtin_expect(res.ec == errc::value_too_large, 0)) {
+    if (__builtin_expect(res.ec == std::errc::value_too_large, 0)) {
       // If the buffer is too small it's probably because of a large
       // precision, or a very large value in fixed format.
       size_t guess = 8 + prec;
-      if (fmt == chars_format::fixed)  // +ddd.prec
+      if (fmt == std::chars_format::fixed)  // +ddd.prec
       {
-        if constexpr (is_same_v<Fp, float> || is_same_v<Fp, double> || is_same_v<Fp, long double>) {
+        if constexpr (std::is_same_v<Fp, float> || std::is_same_v<Fp, double> || std::is_same_v<Fp, long double>) {
           // The number of digits to the left of the decimal point
           // is floor(log10(max(abs(__v),1)))+1
           int exp{};
-          if constexpr (is_same_v<Fp, float>)
+          if constexpr (std::is_same_v<Fp, float>)
             __builtin_frexpf(v, &exp);
-          else if constexpr (is_same_v<Fp, double>)
+          else if constexpr (std::is_same_v<Fp, double>)
             __builtin_frexp(v, &exp);
-          else if constexpr (is_same_v<Fp, long double>)
+          else if constexpr (std::is_same_v<Fp, long double>)
             __builtin_frexpl(v, &exp);
           if (exp > 0) guess += 1U + (exp * 4004U / 13301U);  // log10(2) approx.
         } else
-          guess += numeric_limits<Fp>::max_exponent10;
+          guess += std::numeric_limits<Fp>::max_exponent10;
       }
       if (guess <= sizeof(buf)) [[unlikely]]
         guess = sizeof(buf) * 2;
@@ -1200,13 +1180,13 @@ struct FormatterFp {
       do {
         auto overwrite = [&to_chars, &res](char* p, size_t n) -> auto {
           res = to_chars(p + 1, p + n - 1);
-          return res.ec == errc{} ? res.ptr - p : 0;
+          return res.ec == std::errc{} ? res.ptr - p : 0;
         };
 
         dynbuf.__resize_and_overwrite(dynbuf.capacity() * 2, overwrite);
         start = dynbuf.data() + 1;  // reserve space for sign
         end = dynbuf.data() + dynbuf.size();
-      } while (__builtin_expect(res.ec == errc::value_too_large, 0));
+      } while (__builtin_expect(res.ec == std::errc::value_too_large, 0));
     }
 
     // Use uppercase for 'A', 'E', and 'G' formats.
@@ -1225,20 +1205,20 @@ struct FormatterFp {
         have_sign = false;
     }
 
-    string_view narrow_str(start, res.ptr - start);
+    std::string_view narrow_str(start, res.ptr - start);
 
     // Use alternate form. Ensure decimal point is always present,
     // and add trailing zeros (up to precision) for g and G forms.
     if (spec_.alt && __builtin_isfinite(v)) {
-      string_view s = narrow_str;
-      size_t sigfigs;              // Number of significant figures.
-      size_t z = 0;                // Number of trailing zeros to add.
-      size_t p;                    // Position of the exponent character (if any).
-      size_t d = s.find('.');      // Position of decimal point.
-      if (d != string_view::npos)  // Found decimal point.
+      std::string_view s = narrow_str;
+      size_t sigfigs;                   // Number of significant figures.
+      size_t z = 0;                     // Number of trailing zeros to add.
+      size_t p;                         // Position of the exponent character (if any).
+      size_t d = s.find('.');           // Position of decimal point.
+      if (d != std::string_view::npos)  // Found decimal point.
       {
         p = s.find(expc, d + 1);
-        if (p == string_view::npos) p = s.size();
+        if (p == std::string_view::npos) p = s.size();
 
         // If presentation type is g or G we might need to add zeros.
         if (trailing_zeros) {
@@ -1255,7 +1235,7 @@ struct FormatterFp {
       } else  // No decimal point, we need to insert one.
       {
         p = s.find(expc);  // Find the exponent, if present.
-        if (p == string_view::npos) p = s.size();
+        if (p == std::string_view::npos) p = s.size();
         d = p;  // Position where '.' should be inserted.
         sigfigs = d - have_sign;
       }
@@ -1293,9 +1273,9 @@ struct FormatterFp {
       }
     }
 
-    basic_string<CharT> wstr;
-    basic_string_view<CharT> str;
-    if constexpr (is_same_v<CharT, char>) str = narrow_str;
+    std::basic_string<CharT> wstr;
+    std::basic_string_view<CharT> str;
+    if constexpr (std::is_same_v<CharT, char>) str = narrow_str;
 
     if (spec_.localized && __builtin_isfinite(v)) {
       wstr = localize(str, expc, fc.locale());
@@ -1327,18 +1307,19 @@ struct FormatterFp {
   }
 
   // Locale-specific format.
-  [[nodiscard]] auto localize(basic_string_view<CharT> str, char expc, const locale& loc) const -> basic_string<CharT> {
-    basic_string<CharT> lstr;
+  [[nodiscard]] auto localize(std::basic_string_view<CharT> str, char expc, const std::locale& loc) const
+      -> std::basic_string<CharT> {
+    std::basic_string<CharT> lstr;
 
-    if (loc == locale::classic()) return lstr;  // Nothing to do.
+    if (loc == std::locale::classic()) return lstr;  // Nothing to do.
 
-    const auto& np = use_facet<numpunct<CharT>>(loc);
+    const auto& np = std::use_facet<std::numpunct<CharT>>(loc);
     const CharT point = np.decimal_point();
-    const string grp = np.grouping();
+    const std::string grp = np.grouping();
 
     CharT dot;
     CharT exp;
-    if constexpr (is_same_v<CharT, char>) {
+    if constexpr (std::is_same_v<CharT, char>) {
       dot = '.';
       exp = expc;
     } else {
@@ -1357,14 +1338,14 @@ struct FormatterFp {
           exp = L'P';
           break;
         default:
-          __builtin_unreachable();
+          std::unreachable();
       }
     }
 
     if (grp.empty() && point == dot) return lstr;  // Locale uses '.' and no grouping.
 
     size_t d = str.find(dot);
-    size_t e = min(d, str.find(exp));
+    size_t e = std::min(d, str.find(exp));
     if (e == str.npos) e = str.size();
     const size_t r = str.size() - e;
     auto overwrite = [&](CharT* p, size_t) -> auto {
@@ -1400,14 +1381,14 @@ struct Formatter<CharT, CharT> {
   }
 
   template <typename Out>
-  auto format(CharT u, BasicFormatContext<Out, CharT>& fc) const -> typename BasicFormatContext<Out, CharT>::iterator {
+  constexpr auto format(CharT u, BasicFormatContext<Out, CharT>& fc) const ->
+      typename BasicFormatContext<Out, CharT>::iterator {
     if (f_.spec().type == detail::PresType::None || f_.spec().type == detail::PresType::c)
       return f_.format_character(u, fc);
     if (f_.spec().type == detail::PresType::Esc) {
-      // TODO
       return fc.out();
     }
-    return f_.format(static_cast<make_unsigned_t<CharT>>(u), fc);
+    return f_.format(static_cast<std::make_unsigned_t<CharT>>(u), fc);
   }
 
   constexpr void set_debug_format() noexcept { f_.spec_.type = detail::PresType::Esc; }
@@ -1430,7 +1411,8 @@ struct Formatter<CharT*, CharT> {
 
   template <typename Out>
   [[__gnu__::__nonnull__]]
-  auto format(CharT* u, BasicFormatContext<Out, CharT>& fc) const -> typename BasicFormatContext<Out, CharT>::iterator {
+  constexpr auto format(CharT* u, BasicFormatContext<Out, CharT>& fc) const ->
+      typename BasicFormatContext<Out, CharT>::iterator {
     return f_.format(u, fc);
   }
 
@@ -1451,7 +1433,7 @@ struct Formatter<const CharT*, CharT> {
 
   template <typename Out>
   [[__gnu__::__nonnull__]]
-  auto format(const CharT* u, BasicFormatContext<Out, CharT>& fc) const ->
+  constexpr auto format(const CharT* u, BasicFormatContext<Out, CharT>& fc) const ->
       typename BasicFormatContext<Out, CharT>::iterator {
     return f_.format(u, fc);
   }
@@ -1463,7 +1445,7 @@ struct Formatter<const CharT*, CharT> {
 };
 
 template <detail::Char CharT, size_t Nm>
-struct Formatter<CharT[Nm], CharT> {
+struct Formatter<CharT[Nm], CharT> {  // NOLINT(modernize-avoid-c-arrays)
   Formatter() = default;
 
   [[__gnu__::__always_inline__]]
@@ -1472,7 +1454,8 @@ struct Formatter<CharT[Nm], CharT> {
   }
 
   template <typename Out>
-  auto format(const CharT (&u)[Nm], BasicFormatContext<Out, CharT>& fc) const ->
+  // NOLINTNEXTLINE(modernize-avoid-c-arrays)
+  constexpr auto format(const CharT (&u)[Nm], BasicFormatContext<Out, CharT>& fc) const ->
       typename BasicFormatContext<Out, CharT>::iterator {
     return f_.format({u, Nm}, fc);
   }
@@ -1484,7 +1467,7 @@ struct Formatter<CharT[Nm], CharT> {
 };
 
 template <typename Traits, typename Alloc>
-struct Formatter<basic_string<char, Traits, Alloc>, char> {
+struct Formatter<std::basic_string<char, Traits, Alloc>, char> {
   Formatter() = default;
 
   [[__gnu__::__always_inline__]]
@@ -1493,7 +1476,7 @@ struct Formatter<basic_string<char, Traits, Alloc>, char> {
   }
 
   template <typename Out>
-  auto format(const basic_string<char, Traits, Alloc>& u, BasicFormatContext<Out, char>& fc) const ->
+  constexpr auto format(const std::basic_string<char, Traits, Alloc>& u, BasicFormatContext<Out, char>& fc) const ->
       typename BasicFormatContext<Out, char>::iterator {
     return f_.format(u, fc);
   }
@@ -1505,7 +1488,7 @@ struct Formatter<basic_string<char, Traits, Alloc>, char> {
 };
 
 template <typename Traits>
-struct Formatter<basic_string_view<char, Traits>, char> {
+struct Formatter<std::basic_string_view<char, Traits>, char> {
   Formatter() = default;
 
   [[__gnu__::__always_inline__]]
@@ -1514,7 +1497,7 @@ struct Formatter<basic_string_view<char, Traits>, char> {
   }
 
   template <typename Out>
-  auto format(basic_string_view<char, Traits> u, BasicFormatContext<Out, char>& fc) const ->
+  constexpr auto format(std::basic_string_view<char, Traits> u, BasicFormatContext<Out, char>& fc) const ->
       typename BasicFormatContext<Out, char>::iterator {
     return f_.format(u, fc);
   }
@@ -1531,14 +1514,7 @@ namespace detail {
 // each cv-unqualified arithmetic type ArithmeticT other than
 // char, wchar_t, char8_t, char16_t, or char32_t
 template <typename Tp>
-constexpr bool is_formattable_integer = __is_integer<Tp>::__value;
-
-#if defined __SIZEOF_INT128__
-template <>
-inline constexpr bool is_formattable_integer<__int128> = true;
-template <>
-inline constexpr bool is_formattable_integer<unsigned __int128> = true;
-#endif
+constexpr bool is_formattable_integer = std::is_integral_v<Tp>;
 
 template <>
 inline constexpr bool is_formattable_integer<char> = false;
@@ -1565,7 +1541,8 @@ struct Formatter<Tp, CharT> {
   }
 
   template <typename Out>
-  auto format(Tp u, BasicFormatContext<Out, CharT>& fc) const -> typename BasicFormatContext<Out, CharT>::iterator {
+  constexpr auto format(Tp u, BasicFormatContext<Out, CharT>& fc) const ->
+      typename BasicFormatContext<Out, CharT>::iterator {
     return f_.format(u, fc);
   }
 
@@ -1584,7 +1561,8 @@ struct Formatter<Tp, CharT> {
   }
 
   template <typename Out>
-  auto format(Tp u, BasicFormatContext<Out, CharT>& fc) const -> typename BasicFormatContext<Out, CharT>::iterator {
+  constexpr auto format(Tp u, BasicFormatContext<Out, CharT>& fc) const ->
+      typename BasicFormatContext<Out, CharT>::iterator {
     return f_.format(u, fc);
   }
 
@@ -1641,7 +1619,7 @@ struct Formatter<const void*, CharT> {
   }
 
   template <typename Out>
-  auto format(const void* v, BasicFormatContext<Out, CharT>& fc) const ->
+  constexpr auto format(const void* v, BasicFormatContext<Out, CharT>& fc) const ->
       typename BasicFormatContext<Out, CharT>::iterator {
     auto u = reinterpret_cast<uintptr_t>(v);
     std::array<char, 2 + (sizeof(v) * 2)> buf;
@@ -1654,8 +1632,8 @@ struct Formatter<const void*, CharT> {
       for (auto* p = buf.begin() + 2; p != ptr; ++p) *p = std::toupper(*p);
     }
 
-    basic_string_view<CharT> str;
-    if constexpr (is_same_v<CharT, char>) str = string_view(buf.data(), n);
+    std::basic_string_view<CharT> str;
+    if constexpr (std::is_same_v<CharT, char>) str = std::string_view(buf.data(), n);
 
     if (spec_.zero_fill) {
       size_t width = spec_.get_width(fc);
@@ -1686,7 +1664,8 @@ struct Formatter<void*, CharT> {
   }
 
   template <typename Out>
-  auto format(void* v, BasicFormatContext<Out, CharT>& fc) const -> typename BasicFormatContext<Out, CharT>::iterator {
+  constexpr auto format(void* v, BasicFormatContext<Out, CharT>& fc) const ->
+      typename BasicFormatContext<Out, CharT>::iterator {
     return f_.format(v, fc);
   }
 
@@ -1695,7 +1674,7 @@ struct Formatter<void*, CharT> {
 };
 
 template <detail::Char CharT>
-struct Formatter<nullptr_t, CharT> {
+struct Formatter<std::nullptr_t, CharT> {
   Formatter() = default;
 
   [[__gnu__::__always_inline__]]
@@ -1704,7 +1683,7 @@ struct Formatter<nullptr_t, CharT> {
   }
 
   template <typename Out>
-  auto format(nullptr_t, BasicFormatContext<Out, CharT>& fc) const ->
+  constexpr auto format(std::nullptr_t, BasicFormatContext<Out, CharT>& fc) const ->
       typename BasicFormatContext<Out, CharT>::iterator {
     return f_.format(nullptr, fc);
   }
@@ -1718,22 +1697,22 @@ struct Formatter<nullptr_t, CharT> {
 namespace detail {
 
 template <typename Tp, typename Context,
-          typename Formatter = typename Context::template formatter_type<remove_const_t<Tp>>,
+          typename Formatter = typename Context::template formatter_type<std::remove_const_t<Tp>>,
           typename ParseContext = BasicFormatParseContext<typename Context::char_type>>
 concept parsable_with = std::semiregular<Formatter> && requires(Formatter f, ParseContext pc) {
-  { f.parse(pc) } -> same_as<typename ParseContext::iterator>;
+  { f.parse(pc) } -> std::same_as<typename ParseContext::iterator>;
 };
 
 template <typename Tp, typename Context,
-          typename Formatter = typename Context::template formatter_type<remove_const_t<Tp>>,
+          typename Formatter = typename Context::template formatter_type<std::remove_const_t<Tp>>,
           typename ParseContext = BasicFormatParseContext<typename Context::char_type>>
 concept formattable_with = std::semiregular<Formatter> && requires(const Formatter cf, Tp&& t, Context fc) {
-  { cf.format(t, fc) } -> same_as<typename Context::iterator>;
+  { cf.format(t, fc) } -> std::same_as<typename Context::iterator>;
 };
 
 // An unspecified output iterator type used in the `formattable` concept.
 template <typename CharT>
-using iter_for = back_insert_iterator<basic_string<CharT>>;
+using iter_for = std::back_insert_iterator<std::basic_string<CharT>>;
 
 template <typename Tp, typename CharT, typename Context = BasicFormatContext<iter_for<CharT>, CharT>>
 concept formattable_impl = parsable_with<Tp, Context> && formattable_with<Tp, Context>;
@@ -1745,7 +1724,7 @@ concept formattable_impl = parsable_with<Tp, Context> && formattable_with<Tp, Co
 // but we can't guard it with __cpp_lib_format_ranges until we define that!
 // [format.formattable], concept formattable
 template <typename Tp, typename CharT>
-concept formattable = detail::formattable_impl<remove_reference_t<Tp>, CharT>;
+concept formattable = detail::formattable_impl<std::remove_reference_t<Tp>, CharT>;
 
 /// @cond undocumented
 namespace detail {
@@ -1764,7 +1743,7 @@ using maybe_const_range = std::conditional_t<const_formattable_range<Rg, CharT>,
 template <typename Out>
 struct FormatToNResult {
   Out out;
-  iter_difference_t<Out> size;
+  std::iter_difference_t<Out> size;
 };
 
 /// @cond undocumented
@@ -1775,7 +1754,7 @@ class SinkIter {
   Sink<CharT>* sink_ = nullptr;
 
  public:
-  using iterator_category = output_iterator_tag;
+  using iterator_category = std::output_iterator_tag;
   using value_type = void;
   using difference_type = ptrdiff_t;
   using pointer = void;
@@ -1785,38 +1764,25 @@ class SinkIter {
   SinkIter(const SinkIter&) = default;
   auto operator=(const SinkIter&) -> SinkIter& = default;
 
-  [[__gnu__::__always_inline__]]
-  explicit constexpr SinkIter(Sink<CharT>& sink)
-      : sink_(std::addressof(sink)) {}
+  explicit constexpr SinkIter(Sink<CharT>& sink) : sink_(std::addressof(sink)) {}
 
-  [[__gnu__::__always_inline__]]
   constexpr auto operator=(CharT c) -> SinkIter& {
     sink_->write(c);
     return *this;
   }
 
-  [[__gnu__::__always_inline__]]
-  constexpr auto operator=(basic_string_view<CharT> s) -> SinkIter& {
+  constexpr auto operator=(std::basic_string_view<CharT> s) -> SinkIter& {
     sink_->write(s);
     return *this;
   }
 
-  [[__gnu__::__always_inline__]]
-  constexpr auto operator*() -> SinkIter& {
-    return *this;
-  }
+  constexpr auto operator*() -> SinkIter& { return *this; }
 
-  [[__gnu__::__always_inline__]]
-  constexpr auto operator++() -> SinkIter& {
-    return *this;
-  }
+  constexpr auto operator++() -> SinkIter& { return *this; }
 
-  [[__gnu__::__always_inline__]]
-  constexpr auto operator++(int) -> SinkIter {
-    return *this;
-  }
+  constexpr auto operator++(int) -> SinkIter { return *this; }
 
-  [[nodiscard]] auto reserve(size_t n) const { return sink_->reserve(n); }
+  [[nodiscard]] constexpr auto reserve(size_t n) const { return sink_->reserve(n); }
 };
 
 // Abstract base class for type-erased character sinks.
@@ -1827,38 +1793,33 @@ class Sink {
   friend class SinkIter<CharT>;
 
   std::span<CharT> span_;
-  typename std::span<CharT>::iterator next_;
+  std::span<CharT>::iterator next_;
 
   // Called when the span is full, to make more space available.
   // Precondition: _M_next != _M_span.begin()
   // Postcondition: _M_next != _M_span.end()
   // TODO: remove the precondition? could make overflow handle it.
-  virtual void overflow() = 0;
+  constexpr virtual void overflow() = 0;
 
  protected:
   // Precondition: __span.size() != 0
-  [[__gnu__::__always_inline__]]
-  explicit constexpr Sink(std::span<CharT> span) noexcept
-      : span_(span), next_(span.begin()) {}
+  constexpr explicit Sink(std::span<CharT> span) noexcept : span_{span}, next_{span.begin()} {}
 
   // The portion of the span that has been written to.
-  [[__gnu__::__always_inline__]] [[nodiscard]] auto used() const noexcept -> std::span<CharT> {
-    return span_.first(next_ - span_.begin());
+  [[nodiscard]] constexpr auto used() const noexcept -> std::span<CharT> {
+    return span_.first(std::distance(span_.begin(), next_));
   }
 
   // The portion of the span that has not been written to.
-  [[__gnu__::__always_inline__]] [[nodiscard]] constexpr auto unused() const noexcept -> std::span<CharT> {
-    return span_.subspan(next_ - span_.begin());
+  [[nodiscard]] constexpr auto unused() const noexcept -> std::span<CharT> {
+    return span_.subspan(std::distance(span_.begin(), next_));
   }
 
   // Use the start of the span as the next write position.
-  [[__gnu__::__always_inline__]]
-  constexpr void rewind() noexcept {
-    next_ = span_.begin();
-  }
+  constexpr void rewind() noexcept { next_ = span_.begin(); }
 
   // Replace the current output range.
-  void reset(span<CharT> s, size_t pos = 0) noexcept {
+  constexpr void reset(std::span<CharT> s, size_t pos = 0) noexcept {
     span_ = s;
     next_ = s.begin() + pos;
   }
@@ -1870,7 +1831,7 @@ class Sink {
       overflow();
   }
 
-  constexpr void write(basic_string_view<CharT> s) {
+  constexpr void write(std::basic_string_view<CharT> s) {
     std::span to = unused();
     while (to.size() <= s.size()) {
       s.copy(to.data(), to.size());
@@ -1879,7 +1840,7 @@ class Sink {
       overflow();
       to = unused();
     }
-    if (s.size()) {
+    if (!s.empty()) {
       s.copy(to.data(), s.size());
       next_ += s.size();
     }
@@ -1889,11 +1850,11 @@ class Sink {
   // up to N characters to the sink to avoid unwanted buffering.
   struct Reservation {
     // True if the reservation was successful, false otherwise.
-    explicit operator bool() const noexcept { return sink; }
+    constexpr explicit operator bool() const noexcept { return sink; }
     // A pointer to write directly to the sink.
-    [[nodiscard]] auto get() const noexcept -> CharT* { return sink->next_.operator->(); }
+    [[nodiscard]] constexpr auto get() const noexcept -> CharT* { return sink->next_.operator->(); }
     // Add n to the _M_next iterator for the sink.
-    void bump(size_t n) { sink->bump(n); }
+    constexpr void bump(size_t n) { sink->bump(n); }
 
     Sink* sink;
   };
@@ -1902,7 +1863,7 @@ class Sink {
   // If anything is written to the reservation then there must be a call
   // to _M_bump(N2) before any call to another member function of *this,
   // where N2 is the number of characters written.
-  virtual auto reserve(size_t n) -> Reservation {
+  constexpr virtual auto reserve(size_t n) -> Reservation {
     if (n <= unused().size()) return {this};
 
     if (n <= span_.size())  // Cannot meet the request.
@@ -1915,27 +1876,23 @@ class Sink {
 
   // Update the next output position after writing directly to the sink.
   // pre: no calls to _M_write or _M_overflow since _M_reserve.
-  virtual void bump(size_t n) { next_ += n; }
+  constexpr virtual void bump(size_t n) { next_ += n; }
 
  public:
   Sink(const Sink&) = delete;
   auto operator=(const Sink&) -> Sink& = delete;
 
-  [[__gnu__::__always_inline__]]
-  constexpr auto out() noexcept -> SinkIter<CharT> {
-    return SinkIter<CharT>(*this);
-  }
+  constexpr auto out() noexcept -> SinkIter<CharT> { return SinkIter<CharT>(*this); }
 };
 
 // A sink with an internal buffer. This is used to implement concrete sinks.
 template <typename CharT>
 class BufSink : public Sink<CharT> {
  protected:
-  CharT buf[32 * sizeof(void*) / sizeof(CharT)];
+  static constexpr std::size_t buf_size = 32 * sizeof(void*) / sizeof(CharT);
+  std::array<CharT, buf_size> buf;
 
-  [[__gnu__::__always_inline__]]
-  constexpr BufSink() noexcept
-      : Sink<CharT>(buf) {}
+  constexpr BufSink() noexcept : Sink<CharT>(buf) {}
 };
 
 using std::vector;
@@ -1949,53 +1906,53 @@ class SeqSink final : public BufSink<typename Seq::value_type> {
   Seq seq_;
 
   // Transfer buffer contents to the sequence, so buffer can be refilled.
-  void overflow() override {
+  constexpr void overflow() override {
     auto s = this->used();
     if (s.empty()) [[unlikely]]
       return;  // Nothing in the buffer to transfer to _M_seq.
 
-    // If _M_reserve was called then _M_bump must have been called too.
+    // If reserve was called then bump must have been called too.
     assert(s.data() != seq_.data());
 
-    if constexpr (is_specialization_of<Seq, basic_string>)
+    if constexpr (is_specialization_of<Seq, std::basic_string>)
       seq_.append(s.data(), s.size());
     else
       seq_.insert(seq_.end(), s.begin(), s.end());
 
-    // Make the whole of _M_buf available for the next write:
+    // Make the whole of buf_ available for the next write:
     this->rewind();
   }
 
-  auto reserve(size_t n) -> typename Sink<char_t>::Reservation override {
+  constexpr auto reserve(size_t n) -> typename Sink<char_t>::Reservation override {
     // We might already have n characters available in this->_M_unused(),
     // but the whole point of this function is to be an optimization for
-    // the std::format("{}", x) case. We want to avoid writing to _M_buf
+    // the std::format("{}", x) case. We want to avoid writing to buf
     // and then copying that into a basic_string if possible, so this
-    // function prefers to create space directly in _M_seq rather than
-    // using _M_buf.
+    // function prefers to create space directly in seq_ rather than
+    // using buf.
 
-    if constexpr (is_specialization_of<Seq, basic_string> || is_specialization_of<Seq, vector>) {
-      // Flush the buffer to _M_seq first (should not be needed).
+    if constexpr (is_specialization_of<Seq, std::basic_string> || is_specialization_of<Seq, std::vector>) {
+      // Flush the buffer to seq_ first (should not be needed).
       if (this->used().size()) [[unlikely]]
         SeqSink::overflow();
 
-      // Expand _M_seq to make __n new characters available:
+      // Expand seq_ to make n new characters available:
       const auto sz = seq_.size();
-      if constexpr (is_same_v<string, Seq> || is_same_v<wstring, Seq>)
+      if constexpr (std::is_same_v<std::string, Seq> || std::is_same_v<std::wstring, Seq>)
         seq_.resize_and_overwrite(sz + n, [](auto, auto n2) -> auto { return n2; });
       else
         seq_.resize(sz + n);
 
-      // Set _M_used() to be a span over the original part of _M_seq
-      // and _M_unused() to be the extra capacity we just created:
+      // Set used() to be a span over the original part of seq_
+      // and unused() to be the extra capacity we just created:
       this->reset(seq_, sz);
       return {this};
     } else  // Try to use the base class' buffer.
-      return Sink<char_t>::_M_reserve(n);
+      return Sink<char_t>::reserve(n);
   }
 
-  void bump(size_t n) override {
-    if constexpr (is_specialization_of<Seq, basic_string> || is_specialization_of<Seq, vector>) {
+  constexpr void bump(size_t n) override {
+    if constexpr (is_specialization_of<Seq, std::basic_string> || is_specialization_of<Seq, std::vector>) {
       auto s = this->used();
       assert(s.data() == seq_.data());
       // Truncate the sequence to the part that was actually written to:
@@ -2010,20 +1967,20 @@ class SeqSink final : public BufSink<typename Seq::value_type> {
   // to _M_buf if it overflows? Or even do that for all unused capacity?
 
   [[__gnu__::__always_inline__]]
-  SeqSink() noexcept(is_nothrow_default_constructible_v<Seq>) = default;
+  constexpr SeqSink() noexcept(std::is_nothrow_default_constructible_v<Seq>) = default;
 
-  explicit SeqSink(Seq&& s) noexcept(is_nothrow_move_constructible_v<Seq>) : seq_(std::move(s)) {}
+  constexpr explicit SeqSink(Seq&& s) noexcept(std::is_nothrow_move_constructible_v<Seq>) : seq_(std::move(s)) {}
 
   using Sink<char_t>::out;
 
-  auto get() && -> Seq {
+  constexpr auto get() && -> Seq {
     if (this->used().size() != 0) SeqSink::overflow();
     return std::move(seq_);
   }
 
   // A writable span that views everything written to the sink.
   // Will be either a view over _M_seq or the used part of _M_buf.
-  auto view() -> span<char_t> {
+  constexpr auto view() -> std::span<char_t> {
     auto s = this->used();
     if (seq_.size()) {
       if (s.size() != 0) SeqSink::overflow();
@@ -2033,8 +1990,8 @@ class SeqSink final : public BufSink<typename Seq::value_type> {
   }
 };
 
-template <typename CharT, typename Alloc = allocator<CharT>>
-using StrSink = SeqSink<basic_string<CharT, char_traits<CharT>, Alloc>>;
+template <typename CharT, typename Alloc = std::allocator<CharT>>
+using StrSink = SeqSink<std::basic_string<CharT, std::char_traits<CharT>, Alloc>>;
 
 // template<typename _CharT, typename _Alloc = allocator<_CharT>>
 // using _Vec_sink = _Seq_sink<vector<_CharT, _Alloc>>;
@@ -2045,15 +2002,17 @@ using StrSink = SeqSink<basic_string<CharT, char_traits<CharT>, Alloc>>;
 template <typename CharT, typename OutIter>
 class IterSink : public BufSink<CharT> {
   OutIter out_;
-  iter_difference_t<OutIter> max_;
+  std::iter_difference_t<OutIter> max_;
+
+  size_t count_ = 0;
 
  protected:
-  size_t count_ = 0;
+  [[nodiscard]] constexpr auto count() const noexcept -> size_t { return count_; }
 
   void overflow() override {
     auto s = this->used();
     if (max_ < 0)  // No maximum.
-      out_ = ranges::copy(s, std::move(out_)).out;
+      out_ = std::ranges::copy(s, std::move(out_)).out;
     else if (count_ < static_cast<size_t>(max_)) {
       auto max = max_ - count_;
       std::span<CharT> first;
@@ -2061,7 +2020,7 @@ class IterSink : public BufSink<CharT> {
         first = s.first(static_cast<size_t>(max));
       else
         first = s;
-      out_ = ranges::copy(first, std::move(out_)).out;
+      out_ = std::ranges::copy(first, std::move(out_)).out;
     }
     this->rewind();
     count_ += s.size();
@@ -2069,7 +2028,7 @@ class IterSink : public BufSink<CharT> {
 
  public:
   [[__gnu__::__always_inline__]]
-  explicit IterSink(OutIter out, iter_difference_t<OutIter> max = -1)
+  constexpr explicit IterSink(OutIter out, std::iter_difference_t<OutIter> max = -1)
       : out_(std::move(out)), max_(max) {}
 
   using Sink<CharT>::out;
@@ -2088,19 +2047,18 @@ class IterSink : public BufSink<CharT> {
 // valid range, but we never actually call _M_span.end(). This class does
 // not introduce any invalid pointer arithmetic or overflows that would not
 // have happened anyway.
-template <typename CharT, contiguous_iterator OutIter>
-  requires same_as<iter_value_t<OutIter>, CharT>
+template <typename CharT, std::contiguous_iterator OutIter>
+  requires std::same_as<std::iter_value_t<OutIter>, CharT>
 class IterSink<CharT, OutIter> : public Sink<CharT> {
   OutIter first_;
   std::iter_difference_t<OutIter> max_ = -1;
 
- protected:
   size_t count_ = 0;
-
- private:
-  CharT buf_[64];  // Write here after outputting _M_max characters.
+  std::array<CharT, 64> buf_;  // Write here after outputting _M_max characters.
 
  protected:
+  [[nodiscard]] constexpr auto count() const noexcept -> size_t { return count_; }
+
   void overflow() override {
     if (this->unused().size() != 0) return;  // No need to switch to internal buffer yet.
 
@@ -2136,7 +2094,7 @@ class IterSink<CharT, OutIter> : public Sink<CharT> {
     if (n == 0) return buf;  // Only write to the internal buffer.
 
     if (n > 0) {
-      if constexpr (!is_integral_v<iter_difference_t<OutIter>> || sizeof(n) > sizeof(size_t)) {
+      if constexpr (!std::is_integral_v<std::iter_difference_t<OutIter>> || sizeof(n) > sizeof(size_t)) {
         // __int128 or __detail::__max_diff_type
         auto m = std::iter_difference_t<OutIter>(static_cast<size_t>(-1));
         if (n > m) n = m;
@@ -2203,6 +2161,16 @@ enum class ArgT : unsigned char {
   Max
 };
 
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr auto operator|(ArgT lhs, T rhs) -> T {
+  return std::to_underlying(lhs) | rhs;
+}
+
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr auto operator|(T lhs, ArgT rhs) -> T {
+  return lhs | std::to_underlying(rhs);
+}
+
 template <typename Context>
 struct ArgValue {
   using char_t = typename Context::char_type;
@@ -2213,7 +2181,7 @@ struct ArgValue {
   };
 
   union {
-    monostate none;
+    std::monostate none;
     bool boolean;
     char_t c;
     int i;
@@ -2226,71 +2194,44 @@ struct ArgValue {
     long double ldbl;
 #endif
     const char_t* str;
-    basic_string_view<char_t> sv;
+    std::basic_string_view<char_t> sv;
     const void* ptr;
     HandleBase handle;
-#ifdef __SIZEOF_INT128__
-    __int128 i128;
-    unsigned __int128 u128;
-#endif
-#ifdef _GLIBCXX_LONG_DOUBLE_ALT128_COMPAT
-    __ieee128 f128;
-    __ibm128 ibm128;
-#elif _GLIBCXX_FORMAT_F128 == 2
-    __float128_t f128;
-#endif
   };
 
   [[__gnu__::__always_inline__]]
-  ArgValue()
+  constexpr ArgValue()
       : none() {}
 
   template <typename Tp, typename Self>
   [[__gnu__::__always_inline__]]
-  static auto get(Self& u) noexcept -> auto& {
-    if constexpr (is_same_v<Tp, bool>)
-      return u._M_bool;
-    else if constexpr (is_same_v<Tp, char_t>)
-      return u._M_c;
-    else if constexpr (is_same_v<Tp, int>)
-      return u._M_i;
-    else if constexpr (is_same_v<Tp, unsigned>)
-      return u._M_u;
-    else if constexpr (is_same_v<Tp, int64_t>)
-      return u._M_ll;
-    else if constexpr (is_same_v<Tp, uint64_t>)
-      return u._M_ull;
-    else if constexpr (is_same_v<Tp, float>)
-      return u._M_flt;
-    else if constexpr (is_same_v<Tp, double>)
-      return u._M_dbl;
-#ifndef _GLIBCXX_LONG_DOUBLE_ALT128_COMPAT
-    else if constexpr (is_same_v<Tp, long double>)
-      return u._M_ldbl;
-#else
-    else if constexpr (is_same_v<_Tp, __ieee128>)
-      return __u._M_f128;
-    else if constexpr (is_same_v<_Tp, __ibm128>)
-      return __u._M_ibm128;
-#endif
-    else if constexpr (is_same_v<Tp, const char_t*>)
-      return u._M_str;
-    else if constexpr (is_same_v<Tp, basic_string_view<char_t>>)
-      return u._M_sv;
-    else if constexpr (is_same_v<Tp, const void*>)
-      return u._M_ptr;
-#ifdef __SIZEOF_INT128__
-    else if constexpr (is_same_v<Tp, __int128>)
-      return u._M_i128;
-    else if constexpr (is_same_v<Tp, unsigned __int128>)
-      return u._M_u128;
-#endif
-#if _GLIBCXX_FORMAT_F128 == 2
-    else if constexpr (is_same_v<_Tp, __float128_t>)
-      return __u._M_f128;
-#endif
-    else if constexpr (derived_from<Tp, HandleBase>)
-      return static_cast<Tp&>(u._M_handle);
+  static constexpr auto get(Self& u) noexcept -> auto& {
+    if constexpr (std::is_same_v<Tp, bool>)
+      return u.boolean;
+    else if constexpr (std::is_same_v<Tp, char_t>)
+      return u.c;
+    else if constexpr (std::is_same_v<Tp, int>)
+      return u.i;
+    else if constexpr (std::is_same_v<Tp, unsigned>)
+      return u.u;
+    else if constexpr (std::is_same_v<Tp, int64_t>)
+      return u.ll;
+    else if constexpr (std::is_same_v<Tp, uint64_t>)
+      return u.ull;
+    else if constexpr (std::is_same_v<Tp, float>)
+      return u.flt;
+    else if constexpr (std::is_same_v<Tp, double>)
+      return u.dbl;
+    else if constexpr (std::is_same_v<Tp, long double>)
+      return u.ldbl;
+    else if constexpr (std::is_same_v<Tp, const char_t*>)
+      return u.str;
+    else if constexpr (std::is_same_v<Tp, std::basic_string_view<char_t>>)
+      return u.sv;
+    else if constexpr (std::is_same_v<Tp, const void*>)
+      return u.ptr;
+    else if constexpr (std::derived_from<Tp, HandleBase>)
+      return static_cast<Tp&>(u.handle);
     // Otherwise, ill-formed.
   }
 
@@ -2308,11 +2249,38 @@ struct ArgValue {
 
   template <typename Tp>
   [[__gnu__::__always_inline__]]
-  void set(Tp v) noexcept {
-    if constexpr (derived_from<Tp, HandleBase>)
+  constexpr void set(Tp v) noexcept {
+    if constexpr (std::derived_from<Tp, HandleBase>)
       std::construct_at(&handle, v);
-    else
-      get<Tp>(*this) = v;
+    else {
+      if constexpr (std::is_same_v<Tp, bool>)
+        boolean = v;
+      else if constexpr (std::is_same_v<Tp, char_t>)
+        c = v;
+      else if constexpr (std::is_same_v<Tp, int>)
+        i = v;
+      else if constexpr (std::is_same_v<Tp, unsigned>)
+        u = v;
+      else if constexpr (std::is_same_v<Tp, int64_t>)
+        ll = v;
+      else if constexpr (std::is_same_v<Tp, uint64_t>)
+        ull = v;
+      else if constexpr (std::is_same_v<Tp, float>)
+        flt = v;
+      else if constexpr (std::is_same_v<Tp, double>)
+        dbl = v;
+      else if constexpr (std::is_same_v<Tp, long double>)
+        ldbl = v;
+      else if constexpr (std::is_same_v<Tp, const char_t*>)
+        str = v;
+      else if constexpr (std::is_same_v<Tp, std::basic_string_view<char_t>>)
+        sv = v;
+      else if constexpr (std::is_same_v<Tp, const void*>)
+        ptr = v;
+      else if constexpr (std::derived_from<Tp, HandleBase>)
+        static_cast<Tp&>(handle) = v;
+      // Otherwise, ill-formed.
+    }
   }
 };
 
@@ -2336,11 +2304,11 @@ class BasicFormatArg {
 
     // Format as const if possible, to reduce instantiations.
     template <typename Tp>
-    using maybe_const_t = __conditional_t<formattable<const Tp>, const Tp, Tp>;
+    using maybe_const_t = std::conditional_t<formattable<const Tp>, const Tp, Tp>;
 
     template <typename Tq>
     static void format(BasicFormatParseContext<CharT>& parse_ctx, Context& format_ctx, const void* ptr) {
-      using Td = remove_const_t<Tq>;
+      using Td = std::remove_const_t<Tq>;
       typename Context::template formatter_type<Td> f;
       parse_ctx.advance_to(f.parse(parse_ctx));
       Tq& val = *const_cast<Tq*>(static_cast<const Td*>(ptr));
@@ -2369,7 +2337,7 @@ class BasicFormatArg {
   };
 
   [[__gnu__::__always_inline__]]
-  BasicFormatArg() noexcept
+  constexpr BasicFormatArg() noexcept
       : type_(detail::ArgT::None) {}
 
   [[nodiscard, __gnu__::__always_inline__]]
@@ -2384,7 +2352,7 @@ class BasicFormatArg {
   template <typename Ctx, typename... Args>
   friend class detail::ArgStore;
 
-  static_assert(is_trivially_copyable_v<detail::ArgValue<Context>>);
+  static_assert(std::is_trivially_copyable_v<detail::ArgValue<Context>>);
 
   detail::ArgValue<Context> val_;
   detail::ArgT type_;
@@ -2394,55 +2362,39 @@ class BasicFormatArg {
   // char[3] -> const char*.
   template <typename Tp>
   static consteval auto to_arg_type() {
-    using Td = remove_const_t<Tp>;
-    if constexpr (is_same_v<Td, bool>)
+    using Td = std::remove_const_t<Tp>;
+    if constexpr (std::is_same_v<Td, bool>) {
       return std::type_identity<bool>();
-    else if constexpr (is_same_v<Td, CharT>)
+    } else if constexpr (std::is_same_v<Td, CharT>) {
       return std::type_identity<CharT>();
-    else if constexpr (is_same_v<Td, char> && is_same_v<CharT, wchar_t>)
+    } else if constexpr (std::is_same_v<Td, char> && std::is_same_v<CharT, wchar_t>) {
       return std::type_identity<CharT>();
-#ifdef __SIZEOF_INT128__  // Check before signed/unsigned integer
-    else if constexpr (is_same_v<Td, __int128>)
-      return std::type_identity<__int128>();
-    else if constexpr (is_same_v<Td, unsigned __int128>)
-      return std::type_identity<unsigned __int128>();
-#endif
-    else if constexpr (__is_signed_integer<Td>::value) {
-      if constexpr (sizeof(Td) <= sizeof(int))
+    } else if constexpr (std::is_integral_v<Td> && std::is_signed_v<Td>) {
+      if constexpr (sizeof(Td) <= sizeof(int)) {
         return std::type_identity<int>();
-      else if constexpr (sizeof(Td) <= sizeof(int64_t))
+      } else if constexpr (sizeof(Td) <= sizeof(int64_t)) {
         return std::type_identity<int64_t>();
-    } else if constexpr (__is_unsigned_integer<Td>::value) {
-      if constexpr (sizeof(Td) <= sizeof(unsigned))
+      }
+    } else if constexpr (std::is_integral_v<Td> && std::is_unsigned_v<Td>) {
+      if constexpr (sizeof(Td) <= sizeof(unsigned)) {
         return std::type_identity<unsigned>();
-      else if constexpr (sizeof(Td) <= sizeof(uint64_t))
+      } else if constexpr (sizeof(Td) <= sizeof(uint64_t)) {
         return std::type_identity<uint64_t>();
-    } else if constexpr (is_same_v<Td, float>)
+      }
+    } else if constexpr (std::is_same_v<Td, float>) {
       return std::type_identity<float>();
-    else if constexpr (is_same_v<Td, double>)
+    } else if constexpr (std::is_same_v<Td, double>) {
       return std::type_identity<double>();
-#ifndef _GLIBCXX_LONG_DOUBLE_ALT128_COMPAT
-    else if constexpr (is_same_v<Td, long double>)
+    } else if constexpr (std::is_same_v<Td, long double>) {
       return std::type_identity<long double>();
-#else
-    else if constexpr (is_same_v<_Td, __ibm128>)
-      return std::type_identity<__ibm128>();
-    else if constexpr (is_same_v<_Td, __ieee128>)
-      return std::type_identity<__ieee128>();
-#endif
 
 #if defined(__FLT16_DIG__) && defined(_GLIBCXX_FLOAT_IS_IEEE_BINARY32)
-    else if constexpr (is_same_v<Td, _Float16>)
-      return std::type_identity<float>();
-#endif
-
-#if defined(__BFLT16_DIG__) && defined(_GLIBCXX_FLOAT_IS_IEEE_BINARY32)
-    else if constexpr (is_same_v<_Td, decltype(0.0bf16)>)
+    } else if constexpr (std::is_same_v<Td, _Float16>) {
       return std::type_identity<float>();
 #endif
 
 #ifdef __FLT32_DIG__
-    else if constexpr (is_same_v<_Td, _Float32>)
+    } else if constexpr (std::is_same_v<Td, _Float32>) {
 #ifdef _GLIBCXX_FLOAT_IS_IEEE_BINARY32
       return std::type_identity<float>();
 #else
@@ -2450,38 +2402,27 @@ class BasicFormatArg {
 #endif
 #endif
 #ifdef __FLT64_DIG__
-    else if constexpr (is_same_v<_Td, _Float64>)
+    } else if constexpr (std::is_same_v<Td, _Float64>) {
 #ifdef _GLIBCXX_DOUBLE_IS_IEEE_BINARY64
       return std::type_identity<double>();
 #else
       return std::type_identity<_Float64>();
 #endif
 #endif
-#if _GLIBCXX_FORMAT_F128
-#if __FLT128_DIG__
-    else if constexpr (is_same_v<_Td, _Float128>)
-      return std::type_identity<__format::__float128_t>();
-#endif
-#if __SIZEOF_FLOAT128__
-    else if constexpr (is_same_v<_Td, __float128>)
-      return std::type_identity<__format::__float128_t>();
-#endif
-#endif
-    else if constexpr (is_specialization_of<Td, basic_string_view> || is_specialization_of<Td, basic_string>) {
-      if constexpr (is_same_v<typename Td::value_type, CharT>)
-        return std::type_identity<basic_string_view<CharT>>();
-      else
+    } else if constexpr (is_specialization_of<Td, std::basic_string_view> ||
+                         is_specialization_of<Td, std::basic_string>) {
+      if constexpr (std::is_same_v<typename Td::value_type, CharT>) {
+        return std::type_identity<std::basic_string_view<CharT>>();
+      } else {
         return std::type_identity<Handle>();
-    } else if constexpr (std::is_same_v<decay_t<Td>, const CharT*>)
+      }
+    } else if constexpr (std::is_same_v<std::decay_t<Td>, const CharT*> || std::is_same_v<std::decay_t<Td>, CharT*>) {
       return std::type_identity<const CharT*>();
-    else if constexpr (std::is_same_v<decay_t<Td>, CharT*>)
-      return std::type_identity<const CharT*>();
-    else if constexpr (std::is_void_v<remove_pointer_t<Td>>)
+    } else if constexpr (std::is_void_v<std::remove_pointer_t<Td>> || std::is_same_v<Td, std::nullptr_t>) {
       return std::type_identity<const void*>();
-    else if constexpr (std::is_same_v<Td, nullptr_t>)
-      return std::type_identity<const void*>();
-    else
+    } else {
       return std::type_identity<Handle>();
+    }
   }
 
   // Transform a formattable type to the appropriate storage type.
@@ -2491,7 +2432,7 @@ class BasicFormatArg {
   // Get the _Arg_t value corresponding to a normalized type.
   template <typename Tp>
   static consteval auto to_enum() -> detail::ArgT {
-    using namespace detail;
+    using detail::ArgT;
     if constexpr (std::is_same_v<Tp, bool>)
       return ArgT::Bool;
     else if constexpr (std::is_same_v<Tp, CharT>)
@@ -2520,62 +2461,41 @@ class BasicFormatArg {
 #endif
     else if constexpr (std::is_same_v<Tp, const CharT*>)
       return ArgT::Str;
-    else if constexpr (std::is_same_v<Tp, basic_string_view<CharT>>)
+    else if constexpr (std::is_same_v<Tp, std::basic_string_view<CharT>>)
       return ArgT::Sv;
     else if constexpr (std::is_same_v<Tp, const void*>)
       return ArgT::Ptr;
-#ifdef __SIZEOF_INT128__
-    else if constexpr (std::is_same_v<Tp, __int128>)
-      return ArgT::I128;
-    else if constexpr (std::is_same_v<Tp, unsigned __int128>)
-      return ArgT::U128;
-#endif
-
-    // N.B. some of these types will never actually be used here,
-    // because they get normalized to a standard floating-point type.
-#if defined __FLT32_DIG__ && !_GLIBCXX_FLOAT_IS_IEEE_BINARY32
-    else if constexpr (std::is_same_v<_Tp, _Float32>)
-      return _Arg_f32;
-#endif
-#if defined __FLT64_DIG__ && !_GLIBCXX_DOUBLE_IS_IEEE_BINARY64
-    else if constexpr (std::is_same_v<_Tp, _Float64>)
-      return _Arg_f64;
-#endif
-#if _GLIBCXX_FORMAT_F128 == 2
-    else if constexpr (std::is_same_v<_Tp, __format::__float128_t>)
-      return _Arg_f128;
-#endif
     else if constexpr (std::is_same_v<Tp, Handle>)
       return ArgT::Handle;
   }
 
   template <typename Tp>
-  void set(Tp v) noexcept {
+  constexpr void set(Tp v) noexcept {
     type_ = to_enum<Tp>();
     val_.set(v);
   }
 
   template <typename Tp>
     requires detail::formattable_with<Tp, Context>
-  explicit BasicFormatArg(Tp& v) noexcept {
+  constexpr explicit BasicFormatArg(Tp& v) noexcept {
     using Td = Normalize<Tp>;
-    if constexpr (std::is_same_v<Td, basic_string_view<CharT>>)
+    if constexpr (std::is_same_v<Td, std::basic_string_view<CharT>>)
       set(Td{v.data(), v.size()});
-    else if constexpr (std::is_same_v<remove_const_t<Tp>, char> && std::is_same_v<CharT, wchar_t>)
+    else if constexpr (std::is_same_v<std::remove_const_t<Tp>, char> && std::is_same_v<CharT, wchar_t>)
       set(static_cast<Td>(static_cast<unsigned char>(v)));
     else
       set(static_cast<Td>(v));
   }
 
   template <typename Ctx, typename... Argz>
-  friend auto make_format_args(Argz&...) noexcept;
+  friend constexpr auto make_format_args(Argz&...) noexcept;
 
   template <typename Visitor, typename Ctx>
-  friend auto visit_format_arg(Visitor&& vis, BasicFormatArg<Ctx>) -> decltype(auto);
+  friend constexpr auto visit_format_arg(Visitor&& vis, BasicFormatArg<Ctx>) -> decltype(auto);
 
   template <typename Visitor>
-  auto visit(Visitor&& vis, detail::ArgT type) -> decltype(auto) {
-    using namespace detail;
+  constexpr auto visit(Visitor&& vis, detail::ArgT type) -> decltype(auto) {
+    using detail::ArgT;
     switch (type) {
       case ArgT::None:
         return std::forward<Visitor>(vis)(val_.none);
@@ -2616,27 +2536,15 @@ class BasicFormatArg {
         auto& h = static_cast<Handle&>(val_.handle);
         return std::forward<Visitor>(vis)(h);
       }
-#ifdef __SIZEOF_INT128__
-      case ArgT::I128:
-        return std::forward<Visitor>(vis)(val_.i128);
-      case ArgT::U128:
-        return std::forward<Visitor>(vis)(val_.u128);
-#endif
-
-#if _GLIBCXX_FORMAT_F128 == 2
-      case _Arg_f128:
-        return std::forward<Visitor>(vis)(val.f128);
-#endif
-
       default:
         // _Arg_f16 etc.
-        __builtin_unreachable();
+        std::unreachable();
     }
   }
 };
 
 template <typename Visitor, typename Context>
-inline auto visit_format_arg(Visitor&& vis, BasicFormatArg<Context> arg) -> decltype(auto) {
+constexpr auto visit_format_arg(Visitor&& vis, BasicFormatArg<Context> arg) -> decltype(auto) {
   return arg.visit(std::forward<Visitor>(vis), arg.type_);
 }
 
@@ -2646,16 +2554,16 @@ namespace detail {
 struct WidthPrecVisitor {
   template <typename Tp>
   auto operator()(Tp& arg) const -> size_t {
-    if constexpr (is_same_v<Tp, monostate>) detail::invalid_arg_id_in_format_string();
+    if constexpr (std::is_same_v<Tp, std::monostate>) detail::invalid_arg_id_in_format_string();
     // _GLIBCXX_RESOLVE_LIB_DEFECTS
     // 3720. Restrict the valid types of arg-id for width and precision
     // 3721. Allow an arg-id with a value of zero for width
     else if constexpr (sizeof(Tp) <= sizeof(int64_t)) {
       // _GLIBCXX_RESOLVE_LIB_DEFECTS
       // 3720. Restrict the valid types of arg-id for width and precision
-      if constexpr (__is_unsigned_integer<Tp>::value)
+      if constexpr (std::is_integral_v<Tp> && std::is_unsigned_v<Tp>)
         return arg;
-      else if constexpr (__is_signed_integer<Tp>::value)
+      else if constexpr (std::is_integral_v<Tp> && std::is_signed_v<Tp>)
         if (arg >= 0) return arg;
     }
     throw_format_error("format error: argument used for width or precision must be a non-negative integer");
@@ -2663,13 +2571,13 @@ struct WidthPrecVisitor {
 };
 
 template <typename Context>
-inline auto int_from_arg(const BasicFormatArg<Context>& arg) -> size_t {
-  return std::visit_format_arg(WidthPrecVisitor(), arg);
+constexpr auto int_from_arg(const BasicFormatArg<Context>& arg) -> size_t {
+  return visit_format_arg(WidthPrecVisitor(), arg);
 }
 
-// Pack _Arg_t enum values into a single 60-bit integer.
+// Pack ArgT enum values into a single 60-bit integer.
 template <int Bits, size_t Nm>
-constexpr auto pack_arg_types(const array<ArgT, Nm>& types) {
+constexpr auto pack_arg_types(const std::array<ArgT, Nm>& types) {
   uint64_t packed_types = 0;
   for (auto i = types.rbegin(); i != types.rend(); ++i) packed_types = (packed_types << Bits) | *i;
   return packed_types;
@@ -2707,28 +2615,30 @@ class BasicFormatArgs {
     const FormatArg* args;       // Active when _M_packed_size == 0
   };
 
-  [[nodiscard]] auto size() const noexcept -> size_t { return (packed_size_ != 0U) ? packed_size_ : unpacked_size_; }
+  [[nodiscard]] constexpr auto size() const noexcept -> size_t {
+    return (packed_size_ != 0U) ? packed_size_ : unpacked_size_;
+  }
 
-  [[nodiscard]] auto type(size_t i) const noexcept -> typename detail::ArgT {
+  [[nodiscard]] constexpr auto type(size_t i) const noexcept -> typename detail::ArgT {
     uint64_t t = unpacked_size_ >> (i * packed_type_bits);
     return static_cast<detail::ArgT>(t & packed_type_mask);
   }
 
   template <typename Ctx, typename... Args>
-  friend auto make_format_args(Args&...) noexcept;
+  friend constexpr auto make_format_args(Args&...) noexcept;
 
   // An array of _Arg_t enums corresponding to _Args...
   template <typename... Args>
-  static consteval auto types_to_pack() -> array<detail::ArgT, sizeof...(Args)> {
+  static consteval auto types_to_pack() -> std::array<detail::ArgT, sizeof...(Args)> {
     return {FormatArg::template to_enum<Args>()...};
   }
 
  public:
   template <typename... Args>
-  explicit BasicFormatArgs(const Store<Args...>& store) noexcept;
+  constexpr BasicFormatArgs(const Store<Args...>& store) noexcept;  // NOLINT(google-explicit-constructor)
 
   [[nodiscard, __gnu__::__always_inline__]]
-  auto get(size_t i) const noexcept -> BasicFormatArg<Context> {
+  constexpr auto get(size_t i) const noexcept -> BasicFormatArg<Context> {
     BasicFormatArg<Context> arg;
     if (i < packed_size_) {
       arg.type_ = type(i);
@@ -2745,19 +2655,15 @@ template <typename Context, typename... Args>
 BasicFormatArgs(detail::ArgStore<Context, Args...>) -> BasicFormatArgs<Context>;
 
 template <typename Context, typename... Args>
-auto make_format_args(Args&... fmt_args) noexcept;
+constexpr auto make_format_args(Args&... fmt_args) noexcept;
 
 // An array of type-erased formatting arguments.
 template <typename Context, typename... Args>
 class detail::ArgStore {
-  friend std::BasicFormatArgs<Context>;
+  friend nostd::BasicFormatArgs<Context>;
 
   template <typename Ctx, typename... Argz>
-  friend auto std::
-#if _GLIBCXX_INLINE_VERSION
-      __8::  // Needed for PR c++/59256
-#endif
-      make_format_args(Argz&...) noexcept;
+  friend constexpr auto nostd::make_format_args(Argz&...) noexcept;
 
   // For a sufficiently small number of arguments we only store values.
   // basic_format_args can get the types from the _Args pack.
@@ -2765,16 +2671,16 @@ class detail::ArgStore {
 
   using Element = std::conditional_t<values_only, detail::ArgValue<Context>, BasicFormatArg<Context>>;
 
-  Element args_[sizeof...(Args)];
+  std::array<Element, sizeof...(Args)> args_;
 
   template <typename Tp>
-  static auto make_element(Tp& v) -> Element {
-    using Tq = remove_const_t<Tp>;
+  static constexpr auto make_element(Tp& v) -> Element {
+    using Tq = std::remove_const_t<Tp>;
     using CharT = typename Context::char_type;
     static_assert(std::is_default_constructible_v<Formatter<Tq, CharT>>,
                   "std::formatter must be specialized for the type of each format arg");
     using detail::formattable_with;
-    if constexpr (is_const_v<Tp>)
+    if constexpr (std::is_const_v<Tp>)
       if constexpr (!formattable_with<Tp, Context>)
         if constexpr (formattable_with<Tq, Context>)
           static_assert(formattable_with<Tp, Context>,
@@ -2789,7 +2695,7 @@ class detail::ArgStore {
 
   template <typename... Tp>
     requires(sizeof...(Tp) == sizeof...(Args))
-  [[__gnu__::__always_inline__]] explicit ArgStore(Tp&... a) noexcept : args_{make_element(a)...} {}
+  [[__gnu__::__always_inline__]] constexpr explicit ArgStore(Tp&... a) noexcept : args_{make_element(a)...} {}
 };
 
 template <typename Context>
@@ -2797,7 +2703,7 @@ class detail::ArgStore<Context> {};
 
 template <typename Context>
 template <typename... Args>
-inline BasicFormatArgs<Context>::BasicFormatArgs(const Store<Args...>& store) noexcept {
+constexpr BasicFormatArgs<Context>::BasicFormatArgs(const Store<Args...>& store) noexcept {
   if constexpr (sizeof...(Args) == 0) {
     packed_size_ = 0;
     unpacked_size_ = 0;
@@ -2808,7 +2714,7 @@ inline BasicFormatArgs<Context>::BasicFormatArgs(const Store<Args...>& store) no
     // The packed type enums:
     unpacked_size_ = detail::pack_arg_types<packed_type_bits>(types_to_pack<Args...>());
     // The _Arg_value objects.
-    values = store.args_;
+    values = store.args_.data();
   } else {
     // No packed arguments:
     packed_size_ = 0;
@@ -2822,18 +2728,18 @@ inline BasicFormatArgs<Context>::BasicFormatArgs(const Store<Args...>& store) no
 /// Capture formatting arguments for use by `std::vformat`.
 template <typename Context = format_context, typename... Args>
 [[nodiscard, __gnu__::__always_inline__]]
-inline auto make_format_args(Args&... fmt_args) noexcept {
+constexpr auto make_format_args(Args&... fmt_args) noexcept {
   using fmt_arg = BasicFormatArg<Context>;
-  using store = detail::ArgStore<Context, typename fmt_arg::template _Normalize<Args>...>;
-  return store(fmt_args...);
+  using store = detail::ArgStore<Context, typename fmt_arg::template Normalize<Args>...>;
+  return store{fmt_args...};
 }
 
 /// @cond undocumented
 namespace detail {
 
 template <typename Out, typename CharT, typename Context>
-auto do_vformat_to(Out /*out*/, basic_string_view<CharT> /*fmt*/, const BasicFormatArgs<Context>& /*args*/,
-                   const locale* /*loc*/ = nullptr) -> Out;
+constexpr auto do_vformat_to(Out /*out*/, std::basic_string_view<CharT> /*fmt*/,
+                             const BasicFormatArgs<Context>& /*args*/, const std::locale* /*loc*/ = nullptr) -> Out;
 
 }  // namespace detail
 /// @endcond
@@ -2848,29 +2754,29 @@ auto do_vformat_to(Out /*out*/, basic_string_view<CharT> /*fmt*/, const BasicFor
  */
 template <typename Out, typename CharT>
 class BasicFormatContext {
-  static_assert(output_iterator<Out, const CharT&>);
+  static_assert(std::output_iterator<Out, const CharT&>);
 
   BasicFormatArgs<BasicFormatContext> args_;
   Out out_;
   detail::OptionalLocale loc_;
 
-  BasicFormatContext(BasicFormatArgs<BasicFormatContext> args, Out out) : args_(args), out_(std::move(out)) {}
+  constexpr BasicFormatContext(BasicFormatArgs<BasicFormatContext> args, Out out) : args_(args), out_(std::move(out)) {}
 
-  BasicFormatContext(BasicFormatArgs<BasicFormatContext> args, Out out, const std::locale& loc)
+  constexpr BasicFormatContext(BasicFormatArgs<BasicFormatContext> args, Out out, const std::locale& loc)
       : args_(args), out_(std::move(out)), loc_(loc) {}
 
+  template <typename Out2, typename CharT2, typename Context2>
+  friend constexpr auto detail::do_vformat_to(Out2, std::basic_string_view<CharT2>, const BasicFormatArgs<Context2>&,
+                                              const std::locale*) -> Out2;
+
+ public:
   // _GLIBCXX_RESOLVE_LIB_DEFECTS
   // 4061. Should std::basic_format_context be
   //       default-constructible/copyable/movable?
   BasicFormatContext(const BasicFormatContext&) = delete;
   auto operator=(const BasicFormatContext&) -> BasicFormatContext& = delete;
 
-  template <typename Out2, typename CharT2, typename Context2>
-  friend auto detail::do_vformat_to(Out2, basic_string_view<CharT2>, const BasicFormatArgs<Context2>&, const locale*)
-      -> Out2;
-
- public:
-  ~BasicFormatContext() = default;
+  constexpr ~BasicFormatContext() = default;
 
   using iterator = Out;
   using char_type = CharT;
@@ -2878,21 +2784,21 @@ class BasicFormatContext {
   using formatter_type = Formatter<Tp, CharT>;
 
   [[nodiscard]]
-  auto arg(size_t id) const noexcept -> BasicFormatArg<BasicFormatContext> {
+  constexpr auto arg(size_t id) const noexcept -> BasicFormatArg<BasicFormatContext> {
     return args_.get(id);
   }
 
   [[nodiscard]]
-  auto locale() -> std::locale {
+  constexpr auto locale() -> std::locale {
     return loc_.value();
   }
 
   [[nodiscard]]
-  auto out() -> iterator {
+  constexpr auto out() -> iterator {
     return std::move(out_);
   }
 
-  void advance_to(iterator it) { out_ = std::move(it); }
+  constexpr void advance_to(iterator it) { out_ = std::move(it); }
 };
 
 /// @cond undocumented
@@ -2908,13 +2814,14 @@ struct Scanner {
 
   BasicFormatParseContext<CharT> pc;
 
-  constexpr explicit Scanner(basic_string_view<CharT> str, size_t nargs = static_cast<size_t>(-1)) : pc(str, nargs) {}
+  constexpr explicit Scanner(std::basic_string_view<CharT> str, size_t nargs = static_cast<size_t>(-1))
+      : pc(str, nargs) {}
 
   [[nodiscard]] constexpr auto begin() const noexcept -> iterator { return pc.begin(); }
   [[nodiscard]] constexpr auto end() const noexcept -> iterator { return pc.end(); }
 
   constexpr void scan() {
-    basic_string_view<CharT> fmt = fmt_str();
+    auto fmt = fmt_str();
 
     if (fmt.size() == 2 && fmt[0] == '{' && fmt[1] == '}') {
       pc.advance_to(begin() + 1);
@@ -2962,7 +2869,7 @@ struct Scanner {
     }
   }
 
-  [[nodiscard]] constexpr auto fmt_str() const noexcept -> basic_string_view<CharT> { return {begin(), end()}; }
+  [[nodiscard]] constexpr auto fmt_str() const noexcept -> std::basic_string_view<CharT> { return {begin(), end()}; }
 
   constexpr virtual void on_chars(iterator /*unused*/) {}
 
@@ -2996,7 +2903,8 @@ struct Scanner {
 template <typename Out, typename CharT>
 class DetailtingScanner : public Scanner<CharT> {
  public:
-  DetailtingScanner(BasicFormatContext<Out, CharT>& fc, basic_string_view<CharT> str) : Scanner<CharT>(str), fc_(fc) {}
+  constexpr DetailtingScanner(BasicFormatContext<Out, CharT>& fc, std::basic_string_view<CharT> str)
+      : Scanner<CharT>(str), fc_(fc) {}
 
  private:
   BasicFormatContext<Out, CharT>& fc_;
@@ -3004,7 +2912,7 @@ class DetailtingScanner : public Scanner<CharT> {
   using iterator = typename Scanner<CharT>::iterator;
 
   constexpr void on_chars(iterator last) override {
-    basic_string_view<CharT> str(this->begin(), last);
+    std::basic_string_view<CharT> str(this->begin(), last);
     fc_.advance_to(detail::write(fc_.out(), str));
   }
 
@@ -3012,13 +2920,13 @@ class DetailtingScanner : public Scanner<CharT> {
     using Context = BasicFormatContext<Out, CharT>;
     using Handle = typename BasicFormatArg<Context>::Handle;
 
-    std::visit_format_arg(
+    visit_format_arg(
         [this](auto& arg) -> auto {
-          using Type = remove_reference_t<decltype(arg)>;
+          using Type = std::remove_reference_t<decltype(arg)>;
           using Formatter = typename Context::template formatter_type<Type>;
-          if constexpr (is_same_v<Type, monostate>)
+          if constexpr (std::is_same_v<Type, std::monostate>)
             detail::invalid_arg_id_in_format_string();
-          else if constexpr (is_same_v<Type, Handle>)
+          else if constexpr (std::is_same_v<Type, Handle>)
             arg.format(this->pc, this->fc_);
           else if constexpr (std::is_default_constructible_v<Formatter>) {
             Formatter f;
@@ -3034,11 +2942,11 @@ class DetailtingScanner : public Scanner<CharT> {
 // Validate a format string for Args.
 template <typename CharT, typename... Args>
 class CheckingScanner : public Scanner<CharT> {
-  static_assert((is_default_constructible_v<Formatter<Args, CharT>> && ...),
+  static_assert((std::is_default_constructible_v<Formatter<Args, CharT>> && ...),
                 "std::formatter must be specialized for each type being formatted");
 
  public:
-  constexpr explicit CheckingScanner(basic_string_view<CharT> str) : Scanner<CharT>(str, sizeof...(Args)) {}
+  constexpr explicit CheckingScanner(std::basic_string_view<CharT> str) : Scanner<CharT>(str, sizeof...(Args)) {}
 
  private:
   constexpr void format_arg(size_t id) override {
@@ -3048,7 +2956,7 @@ class CheckingScanner : public Scanner<CharT> {
         return;
       }
     }
-    __builtin_unreachable();
+    std::unreachable();
   }
 
   template <typename Tp, typename... OtherArgs>
@@ -3059,61 +2967,78 @@ class CheckingScanner : public Scanner<CharT> {
     } else if constexpr (sizeof...(OtherArgs) != 0)
       parse_format_spec<OtherArgs...>(id - 1);
     else
-      __builtin_unreachable();
+      std::unreachable();
   }
 };
 
+// Compute the length of the character sequence needed to represent an unsigned integer value in base 10
+template <std::unsigned_integral Tp>
+constexpr auto to_chars_len(Tp value) noexcept -> std::size_t {
+  constexpr std::size_t base = 10;
+  constexpr std::size_t b2 = base * base;
+  constexpr std::size_t b3 = b2 * base;
+  constexpr std::size_t b4 = b3 * base;
+  for (std::size_t n = 1;; n += 4) {
+    if (value < base) return n;
+    if (value < b2) return n + 1;
+    if (value < b3) return n + 2;
+    if (value < b4) return n + 3;
+    value /= b4;
+  }
+}
+
 template <typename Out, typename CharT, typename Context>
-inline auto do_vformat_to(Out out, basic_string_view<CharT> fmt, const BasicFormatArgs<Context>& args,
-                          const locale* loc) -> Out {
+constexpr auto do_vformat_to(Out out, std::basic_string_view<CharT> fmt, const BasicFormatArgs<Context>& args,
+                             const std::locale* loc) -> Out {
   IterSink<CharT, Out> sink(std::move(out));
   SinkIter<CharT> sink_out;
 
-  if constexpr (is_same_v<Out, SinkIter<CharT>>)
+  if constexpr (std::is_same_v<Out, SinkIter<CharT>>)
     sink_out = out;  // Already a sink iterator, safe to use post-move.
   else
     sink_out = sink.out();
 
-  if constexpr (is_same_v<CharT, char>)
+  if constexpr (std::is_same_v<CharT, char>)
     // Fast path for "{}" format strings and simple format arg types.
     if (fmt.size() == 2 && fmt[0] == '{' && fmt[1] == '}') {
       bool done = false;
-      std::visit_format_arg(
+      visit_format_arg(
           [&](auto& arg) -> auto {
-            using tp = remove_cvref_t<decltype(arg)>;
-            if constexpr (is_same_v<tp, bool>) {
+            using tp = std::remove_cvref_t<decltype(arg)>;
+            if constexpr (std::is_same_v<tp, bool>) {
               size_t len = 4 + !arg;
-              const char* chars[] = {"false", "true"};
+              std::array<const char*, 2> chars = {"false", "true"};
               if (auto res = sink_out.reserve(len)) {
-                __builtin_memcpy(res.get(), chars[arg], len);
+                std::memcpy(res.get(), chars[arg], len);
                 res.bump(len);
                 done = true;
               }
-            } else if constexpr (is_same_v<tp, char>) {
+            } else if constexpr (std::is_same_v<tp, char>) {
               if (auto res = sink_out.reserve(1)) {
                 *res.get() = arg;
                 res.bump(1);
                 done = true;
               }
-            } else if constexpr (is_integral_v<tp>) {
-              make_unsigned_t<tp> uval;
+            } else if constexpr (std::is_integral_v<tp>) {
+              std::make_unsigned_t<tp> uval;
               const bool neg = arg < 0;
               if (neg)
-                uval = make_unsigned_t<tp>(~arg) + 1U;
+                uval = std::make_unsigned_t<tp>(~arg) + 1U;
               else
                 uval = arg;
-              const auto n = __detail::__to_chars_len(uval);
+              const auto n = to_chars_len(uval);
               if (auto res = sink_out.reserve(n + neg)) {
                 auto ptr = res.get();
                 *ptr = '-';
-                __detail::__to_chars_10_impl(ptr + (int)neg, n, uval);
+                auto start = ptr + static_cast<std::size_t>(neg);
+                std::to_chars(start, start + n, uval);
                 res.bump(n + neg);
                 done = true;
               }
-            } else if constexpr (is_convertible_v<tp, string_view>) {
-              string_view sv = arg;
+            } else if constexpr (std::is_convertible_v<tp, std::string_view>) {
+              std::string_view sv = arg;
               if (auto res = sink_out.reserve(sv.size())) {
-                __builtin_memcpy(res.get(), sv.data(), sv.size());
+                std::memcpy(res.get(), sv.data(), sv.size());
                 res.bump(sv.size());
                 done = true;
               }
@@ -3122,7 +3047,7 @@ inline auto do_vformat_to(Out out, basic_string_view<CharT> fmt, const BasicForm
           args.get(0));
 
       if (done) {
-        if constexpr (is_same_v<Out, SinkIter<CharT>>)
+        if constexpr (std::is_same_v<Out, SinkIter<CharT>>)
           return sink_out;
         else
           return std::move(sink)._M_finish().out;
@@ -3133,7 +3058,7 @@ inline auto do_vformat_to(Out out, basic_string_view<CharT> fmt, const BasicForm
   DetailtingScanner<SinkIter<CharT>, CharT> scanner(ctx, fmt);
   scanner.scan();
 
-  if constexpr (is_same_v<Out, SinkIter<CharT>>)
+  if constexpr (std::is_same_v<Out, SinkIter<CharT>>)
     return ctx.out();
   else
     return std::move(sink)._M_finish().out;
@@ -3144,86 +3069,87 @@ inline auto do_vformat_to(Out out, basic_string_view<CharT> fmt, const BasicForm
 
 template <typename CharT, typename... Args>
 template <typename Tp>
-  requires convertible_to<const Tp&, std::basic_string_view<CharT>>
+  requires std::convertible_to<const Tp&, std::basic_string_view<CharT>>
 consteval BasicFormatString<CharT, Args...>::BasicFormatString(const Tp& s) : str_(s) {
-  detail::CheckingScanner<CharT, remove_cvref_t<Args>...> scanner(str_);
+  detail::CheckingScanner<CharT, std::remove_cvref_t<Args>...> scanner(str_);
   scanner.scan();
 }
 
 // [format.functions], formatting functions
 
 template <typename Out>
-  requires output_iterator<Out, const char&>
+  requires std::output_iterator<Out, const char&>
 [[__gnu__::__always_inline__]]
-inline auto vformat_to(Out out, string_view fmt, format_args args) -> Out {
+constexpr auto vformat_to(Out out, std::string_view fmt, format_args args) -> Out {
   return detail::do_vformat_to(std::move(out), fmt, args);
 }
 
 template <typename Out>
-  requires output_iterator<Out, const char&>
+  requires std::output_iterator<Out, const char&>
 [[__gnu__::__always_inline__]]
-inline auto vformat_to(Out out, const locale& loc, string_view fmt, format_args args) -> Out {
+constexpr auto vformat_to(Out out, const std::locale& loc, std::string_view fmt, format_args args) -> Out {
   return detail::do_vformat_to(std::move(out), fmt, args, &loc);
 }
 
 [[nodiscard]]
-inline auto vformat(string_view fmt, format_args args) -> string {
+constexpr auto vformat(std::string_view fmt, format_args args) -> std::string {
   detail::StrSink<char> buf;
-  std::vformat_to(buf.out(), fmt, args);
+  vformat_to(buf.out(), fmt, args);
   return std::move(buf).get();
 }
 
 [[nodiscard]]
-inline auto vformat(const locale& loc, string_view fmt, format_args args) -> string {
+constexpr auto vformat(const std::locale& loc, std::string_view fmt, format_args args) -> std::string {
   detail::StrSink<char> buf;
-  std::vformat_to(buf.out(), loc, fmt, args);
+  vformat_to(buf.out(), loc, fmt, args);
   return std::move(buf).get();
 }
 
 template <typename... Args>
 [[nodiscard]]
-inline auto format(format_string<Args...> fmt, Args&&... args) -> string {
-  return std::vformat(fmt.get(), std::make_format_args(args...));
+constexpr auto format(format_string<Args...> fmt, Args&&... args) -> std::string {
+  return vformat(fmt.get(), make_format_args(args...));
 }
 
 template <typename... Args>
 [[nodiscard]]
-inline auto format(const locale& loc, format_string<Args...> fmt, Args&&... args) -> string {
-  return std::vformat(loc, fmt.get(), std::make_format_args(args...));
+constexpr auto format(const std::locale& loc, format_string<Args...> fmt, Args&&... args) -> std::string {
+  return vformat(loc, fmt.get(), make_format_args(args...));
 }
 
 template <typename Out, typename... Args>
-  requires output_iterator<Out, const char&>
-inline auto format_to(Out out, format_string<Args...> fmt, Args&&... args) -> Out {
-  return std::vformat_to(std::move(out), fmt.get(), std::make_format_args(args...));
+  requires std::output_iterator<Out, const char&>
+constexpr auto format_to(Out out, format_string<Args...> fmt, Args&&... args) -> Out {
+  return vformat_to(std::move(out), fmt.get(), make_format_args(args...));
 }
 
 template <typename Out, typename... Args>
-  requires output_iterator<Out, const char&>
-inline auto format_to(Out out, const locale& loc, format_string<Args...> fmt, Args&&... args) -> Out {
-  return std::vformat_to(std::move(out), loc, fmt.get(), std::make_format_args(args...));
+  requires std::output_iterator<Out, const char&>
+constexpr auto format_to(Out out, const std::locale& loc, format_string<Args...> fmt, Args&&... args) -> Out {
+  return vformat_to(std::move(out), loc, fmt.get(), make_format_args(args...));
 }
 
 template <typename Out, typename... Args>
-  requires output_iterator<Out, const char&>
-inline auto format_to_n(Out out, iter_difference_t<Out> n, format_string<Args...> fmt, Args&&... args)
+  requires std::output_iterator<Out, const char&>
+constexpr auto format_to_n(Out out, std::iter_difference_t<Out> n, format_string<Args...> fmt, Args&&... args)
     -> FormatToNResult<Out> {
   detail::IterSink<char, Out> sink(std::move(out), n);
-  std::vformat_to(sink.out(), fmt.get(), std::make_format_args(args...));
+  vformat_to(sink.out(), fmt.get(), make_format_args(args...));
   return std::move(sink)._M_finish();
 }
 
 template <typename Out, typename... Args>
-  requires output_iterator<Out, const char&>
-inline auto format_to_n(Out out, iter_difference_t<Out> n, const locale& loc, format_string<Args...> fmt,
-                        Args&&... args) -> FormatToNResult<Out> {
+  requires std::output_iterator<Out, const char&>
+constexpr auto format_to_n(Out out, std::iter_difference_t<Out> n, const std::locale& loc, format_string<Args...> fmt,
+                           Args&&... args) -> FormatToNResult<Out> {
   detail::IterSink<char, Out> sink(std::move(out), n);
-  std::vformat_to(sink.out(), loc, fmt.get(), std::make_format_args(args...));
+  vformat_to(sink.out(), loc, fmt.get(), make_format_args(args...));
   return std::move(sink)._M_finish();
 }
 
 /// @cond undocumented
 namespace detail {
+
 template <typename CharT>
 class CountingSink final : public IterSink<CharT, CharT*> {
  public:
@@ -3233,74 +3159,77 @@ class CountingSink final : public IterSink<CharT, CharT*> {
     return this->count_ + this->used().size();
   }
 };
+
 }  // namespace detail
 /// @endcond
 
 template <typename... Args>
 [[nodiscard]]
-inline auto formatted_size(format_string<Args...> fmt, Args&&... args) -> size_t {
+constexpr auto formatted_size(format_string<Args...> fmt, Args&&... args) -> size_t {
   detail::CountingSink<char> buf;
-  std::vformat_to(buf.out(), fmt.get(), std::make_format_args(args...));
+  vformat_to(buf.out(), fmt.get(), make_format_args(args...));
   return buf.count();
 }
 
 template <typename... Args>
 [[nodiscard]]
-inline auto formatted_size(const locale& loc, format_string<Args...> fmt, Args&&... args) -> size_t {
+constexpr auto formatted_size(const std::locale& loc, format_string<Args...> fmt, Args&&... args) -> size_t {
   detail::CountingSink<char> buf;
-  std::vformat_to(buf.out(), loc, fmt.get(), std::make_format_args(args...));
+  vformat_to(buf.out(), loc, fmt.get(), make_format_args(args...));
   return buf.count();
 }
 
 // [format.range], formatting of ranges
 // [format.range.fmtkind], variable template format_kind
-enum class RangeFormat : uint8_t { Disabled, Map, Set, Sequence, String, DebugString };
+// enum class RangeFormat : uint8_t { Disabled, Map, Set, Sequence, String, DebugString };
+//
+// /// @cond undocumented
+// template <typename Rg>
+// constexpr auto format_kind = not defined(format_kind<Rg>);
+//
+// template <typename Tp>
+// consteval auto fmt_kind() -> RangeFormat {
+//   using ref = std::ranges::range_reference_t<Tp>;
+//   if constexpr (std::is_same_v<std::remove_cvref_t<ref>, Tp>) {
+//     return RangeFormat::Disabled;
+//   } else if constexpr (requires { typename Tp::key_type; }) {
+//     if constexpr (requires { typename Tp::mapped_type; }) {
+//       using up = std::remove_cvref_t<ref>;
+//       if constexpr (is_specialization_of<up, std::pair>) {
+//         return RangeFormat::Map;
+//       } else if constexpr (is_specialization_of<up, std::tuple>) {
+//         if constexpr (std::tuple_size_v<up> == 2) return RangeFormat::Map;
+//       }
+//     }
+//     return RangeFormat::Set;
+//   } else {
+//     return RangeFormat::Sequence;
+//   }
+// }
+// /// @endcond
+//
+// /// A constant determining how a range should be formatted.
+// template <std::ranges::input_range Rg>
+//   requires std::same_as<Rg, std::remove_cvref_t<Rg>>
+// constexpr RangeFormat format_kind<Rg> = fmt_kind<Rg>();
+//
+// // [format.range.formatter], class template range_formatter
+// template <typename Tp, typename CharT = char>
+//   requires std::same_as<std::remove_cvref_t<Tp>, Tp> && formattable<Tp, CharT>
+// class RangeFormatter;  // TODO
+//
+// /// @cond undocumented
+// namespace detail {
+// // [format.range.fmtdef], class template range-default-formatter
+// template <RangeFormat Kind, std::ranges::input_range Rg, typename CharT>
+// struct RangeDefaultFormatter;  // TODO
+// }  // namespace detail
+// /// @endcond
+//
+// // [format.range.fmtmap], [format.range.fmtset], [format.range.fmtstr],
+// // specializations for maps, sets, and strings
+// template <std::ranges::input_range Rg, typename CharT>
+//   requires(format_kind<Rg> != RangeFormat::Disabled) && formattable<std::ranges::range_reference_t<Rg>, CharT>
+// struct Formatter<Rg, CharT> : detail::RangeDefaultFormatter<format_kind<Rg>, Rg, CharT> {};
 
-/// @cond undocumented
-template <typename Rg>
-constexpr auto format_kind = not defined(format_kind<Rg>);
-
-template <typename Tp>
-consteval auto fmt_kind() -> RangeFormat {
-  using ref = ranges::range_reference_t<Tp>;
-  if constexpr (is_same_v<remove_cvref_t<ref>, Tp>)
-    return RangeFormat::Disabled;
-  else if constexpr (requires { typename Tp::key_type; }) {
-    if constexpr (requires { typename Tp::mapped_type; }) {
-      using up = remove_cvref_t<ref>;
-      if constexpr (__is_pair<up>)
-        return RangeFormat::Map;
-      else if constexpr (std::is_specialization_of<up, tuple>)
-        if constexpr (tuple_size_v<up> == 2) return RangeFormat::Map;
-    }
-    return RangeFormat::Set;
-  } else
-    return RangeFormat::Sequence;
-}
-/// @endcond
-
-/// A constant determining how a range should be formatted.
-template <ranges::input_range Rg>
-  requires same_as<Rg, remove_cvref_t<Rg>>
-constexpr RangeFormat format_kind<Rg> = fmt_kind<Rg>();
-
-// [format.range.formatter], class template range_formatter
-template <typename Tp, typename CharT = char>
-  requires same_as<remove_cvref_t<Tp>, Tp> && formattable<Tp, CharT>
-class RangeFormatter;  // TODO
-
-/// @cond undocumented
-namespace detail {
-// [format.range.fmtdef], class template range-default-formatter
-template <RangeFormat Kind, ranges::input_range Rg, typename CharT>
-struct RangeDefaultFormatter;  // TODO
-}  // namespace detail
-/// @endcond
-
-// [format.range.fmtmap], [format.range.fmtset], [format.range.fmtstr],
-// specializations for maps, sets, and strings
-template <ranges::input_range Rg, typename CharT>
-  requires(format_kind<Rg> != RangeFormat::Disabled) && formattable<std::ranges::range_reference_t<Rg>, CharT>
-struct Formatter<Rg, CharT> : detail::RangeDefaultFormatter<format_kind<Rg>, Rg, CharT> {};
-
-}  // namespace std _GLIBCXX_VISIBILITY(default)
+}  // namespace nostd
