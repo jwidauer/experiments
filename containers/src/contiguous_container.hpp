@@ -113,5 +113,6 @@ struct ContiguousContainer {
   }
 
   constexpr auto data() noexcept -> pointer { return to_derived().data(); }
+  constexpr auto data() const noexcept -> const_pointer { return to_derived().data(); }
   constexpr auto sz [[nodiscard]] () const noexcept -> size_type { return to_derived().size(); }
 };

@@ -6,7 +6,9 @@ project(
   default_options: ['warning_level=3', 'cpp_std=c++26'],
 )
 
-dependencies = []
+dependencies = [
+  dependency('tl-optional', required: true),
+]
 
 exe = executable(
   'containers',
