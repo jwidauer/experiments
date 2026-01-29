@@ -3,7 +3,7 @@
 #include <print>
 #include <vector>
 
-#include "uninitialized_array.hpp"
+#include "multi_object_vector.hpp"
 
 namespace {
 
@@ -43,15 +43,16 @@ void print_range(const R& range, Proj proj = {}) {
 
 }  // namespace
 
-auto main(int /*argc*/, char** /*argv*/) -> int {
-  constexpr auto arr = make_data();
-  auto s_arr = make_s_arr();
+auto main() -> int {
+  auto vec = MultiObjectVector<10, int, float, S>{};
 
-  std::vector<S> vec;
-  vec.reserve(arr.size());
+  for (int i = 0; i < 5; ++i) vec.try_push_back(i, i + 0.5F, S{i, i + 1.0F});
 
-  std::print("s_arr: ");
-  print_range(s_arr, &S::x);
+  auto i = vec.at<int>(2);
+  static_assert(std::is_same_v<decltype(i), tl::optional<int&>>);
+
+  auto f = vec.at<1>(3);
+  static_assert(std::is_same_v<decltype(f), tl::optional<float&>>);
 
   return 0;
 }

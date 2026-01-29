@@ -2,6 +2,7 @@
 #define INCLUDE_UNINITIALIZED_ARRAY_HPP_
 
 #include <array>
+#include <bit>
 #include <cassert>
 #include <optional>
 
@@ -72,7 +73,7 @@ class UninitializedArray {
       return self.storage_.data();
     } else {
       using ptr_t = copy_const_t<Self, T>*;
-      return reinterpret_cast<ptr_t>(self.storage_.data());
+      return std::bit_cast<ptr_t>(self.storage_.data());
     }
   }
 
