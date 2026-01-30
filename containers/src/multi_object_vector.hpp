@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <span>
 #include <tl/optional.hpp>
 #include <tuple>
 
@@ -14,7 +15,10 @@ struct MultiObjectVector {
   using storage_t = std::tuple<UninitializedArray<Ts, N>...>;
 
   template <std::size_t I>
-  using storage_element_t = std::tuple_element_t<I, storage_t>;
+  using storage_object_t = std::tuple_element_t<I, storage_t>;
+
+  template <std::size_t I>
+  using storage_element_t = typename storage_object_t<I>::value_type;
 
   // NOLINTBEGIN(readability-identifier-naming)
   using size_type = std::size_t;
@@ -48,7 +52,7 @@ struct MultiObjectVector {
   }
 
   template <std::size_t I, typename Self>
-  [[nodiscard]] constexpr auto data(this Self& self) -> copy_const_t<Self, typename storage_element_t<I>::value_type>* {
+  [[nodiscard]] constexpr auto data(this Self& self) -> copy_const_t<Self, storage_element_t<I>>* {
     return std::get<I>(self.storages_).data();
   }
 
@@ -58,18 +62,18 @@ struct MultiObjectVector {
   }
 
   template <std::size_t I, typename Self>
-  [[nodiscard]] constexpr auto storage(this Self& self) -> copy_const_t<Self, storage_element_t<I>>& {
-    return std::get<I>(self.storages_);
+  [[nodiscard]] constexpr auto storage(this Self& self) -> std::span<copy_const_t<Self, storage_element_t<I>>> {
+    return {std::get<I>(self.storages_).data(), self.size()};
   }
 
   template <typename T, typename Self>
-  [[nodiscard]] constexpr auto storage(this Self& self) -> copy_const_t<Self, UninitializedArray<T, N>>& {
-    return std::get<UninitializedArray<T, N>>(self.storages_);
+  [[nodiscard]] constexpr auto storage(this Self& self) -> std::span<copy_const_t<Self, T>> {
+    return {std::get<UninitializedArray<T, N>>(self.storages_).data(), self.size()};
   }
 
   template <std::size_t I, typename Self>
   [[nodiscard]] constexpr auto at(this Self& self, size_type idx)
-      -> tl::optional<copy_const_t<Self, typename storage_element_t<I>::value_type>&> {
+      -> tl::optional<copy_const_t<Self, typename storage_object_t<I>::value_type>&> {
     if (idx >= self.size_) return tl::nullopt;
     return self.template storage<I>()[idx];
   }
@@ -88,6 +92,14 @@ struct MultiObjectVector {
     return size_ - 1;
   }
 
+  constexpr auto try_push_back(Ts&&... values) -> tl::optional<size_type> {
+    if (full()) return tl::nullopt;
+
+    ((std::construct_at(address_of<Ts>(size_), std::move(values))), ...);
+    ++size_;
+    return size_ - 1;
+  }
+
   constexpr auto try_insert(size_type index, const Ts&... values) -> tl::optional<size_type> {
     if (full() || index > size_) return tl::nullopt;
 
@@ -100,12 +112,16 @@ struct MultiObjectVector {
     return index;
   }
 
-  constexpr auto try_push_back(Ts&&... values) -> tl::optional<size_type> {
-    if (full()) return tl::nullopt;
+  constexpr auto try_insert(size_type index, Ts&&... values) -> tl::optional<size_type> {
+    if (full() || index > size_) return tl::nullopt;
 
-    ((std::construct_at(address_of<Ts>(size_), std::move(values))), ...);
+    // Move elements to make space
+    ((std::ranges::move_backward(begin<Ts>() + index, end<Ts>(), end<Ts>() + 1)), ...);
+
+    // Insert new elements
+    ((std::construct_at(address_of<Ts>(index), std::move(values))), ...);
     ++size_;
-    return size_ - 1;
+    return index;
   }
 
   constexpr void try_pop_back() {
@@ -132,7 +148,34 @@ struct MultiObjectVector {
     return true;
   }
 
+  template <std::size_t I>
+  constexpr auto find(const storage_element_t<I>& value) const -> tl::optional<size_type> {
+    return find_impl(storage<I>(), value);
+  }
+
+  template <typename T>
+  constexpr auto find(const T& value) const -> tl::optional<size_type> {
+    return find_impl(storage<T>(), value);
+  }
+
+  template <std::size_t I>
+  constexpr auto contains(const storage_element_t<I>& value) const -> bool {
+    return std::ranges::contains(storage<I>(), value);
+  }
+
+  template <typename T>
+  constexpr auto contains(const T& value) const -> bool {
+    return std::ranges::contains(storage<T>(), value);
+  }
+
  private:
+  [[nodiscard]] constexpr auto find_impl(const auto& stor, const auto& value) const -> tl::optional<size_type> {
+    const auto iter = std::ranges::find(stor, value);
+    if (iter == stor.end()) return tl::nullopt;
+
+    return static_cast<size_type>(std::distance(stor.begin(), iter));
+  }
+
   template <typename T, typename Self>
   [[nodiscard]] constexpr auto address_of(this Self& self, size_type idx) -> copy_const_t<Self, T>* {
     return std::addressof(self.template storage<T>()[idx]);
