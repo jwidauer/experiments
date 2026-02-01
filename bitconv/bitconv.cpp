@@ -15,7 +15,7 @@ static constexpr auto operator==(const Example& lhs, const Example& rhs) -> bool
 
 auto main() -> int {
   constexpr Example ex{.a = 42, .d = 'x', .b = 3.14F};
-  auto bytes = bitconv::as_bytes(ex);
+  auto bytes = bitconv::to_bytes(ex);
   auto byte_span = std::span{bytes};
   auto ex_copy = bitconv::from_bytes<Example>(byte_span);
 
