@@ -1,16 +1,16 @@
 #include <functional>
 #include <memory>
 #include <print>
-#include <vector>
 
 #include "multi_object_vector.hpp"
+#include "static_vector.hpp"
 
 namespace {
 
 consteval auto make_data() -> UninitializedArray<int, 10> {
   UninitializedArray<int, 10> arr;
   for (std::size_t i = 0; i < arr.size(); ++i) {
-    arr[i] = static_cast<int>(i);
+    *arr[i] = static_cast<int>(i);
   }
   return arr;
 }
@@ -27,7 +27,7 @@ struct S {
 constexpr auto make_s_arr() -> UninitializedArray<S, 10> {
   UninitializedArray<S, 10> arr;
   for (std::size_t i = 0; i < arr.size(); ++i) {
-    std::construct_at(std::addressof(arr[i]), i, i + 1);
+    std::construct_at(arr[i], i, i + 1);
   }
   return arr;
 }
@@ -53,6 +53,11 @@ auto main() -> int {
 
   auto f = vec.at<1>(3);
   static_assert(std::is_same_v<decltype(f), tl::optional<float&>>);
+
+  ctr::StaticVector<int, 5> static_vec;
+  for (int i = 0; i < 5; ++i) {
+    static_vec.try_push_back(i * 10);
+  }
 
   return 0;
 }

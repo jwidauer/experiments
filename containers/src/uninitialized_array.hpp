@@ -44,9 +44,9 @@ class UninitializedArray {
   }
 
   template <typename Self>
-  constexpr auto operator[] [[nodiscard]] (this Self& self, std::size_t idx) -> copy_const_t<Self, T>& {
+  constexpr auto operator[] [[nodiscard]] (this Self& self, std::size_t idx) -> copy_const_t<Self, T>* {
     assert(idx < N && "Index out of bounds");
-    return *(self.data() + idx);
+    return self.data() + idx;
   }
 
   constexpr auto begin [[nodiscard]] (this auto& self) -> decltype(auto) { return self.make_iter(self.data()); }
