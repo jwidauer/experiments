@@ -19,6 +19,8 @@ struct AlignedStorage {
  public:
   [[nodiscard]] constexpr auto data() -> Data* { return std::addressof(data_); }
   [[nodiscard]] constexpr auto data() const -> const Data* { return std::addressof(data_); }
+
+  [[nodiscard]] consteval auto size() const -> std::size_t { return data_.data.size(); }
 };
 
 template <typename T, std::size_t N>

@@ -2,6 +2,7 @@
 #include <memory>
 #include <print>
 
+#include "function.hpp"
 #include "multi_object_vector.hpp"
 #include "static_vector.hpp"
 
@@ -44,6 +45,8 @@ void print_range(const R& range, Proj proj = {}) {
 }  // namespace
 
 auto main() -> int {
+  constexpr Function<int(int, int), 1> add{[](int a, int b) -> int { return a + b; }};
+
   auto vec = MultiObjectVector<10, int, float, S>{};
 
   for (int i = 0; i < 5; ++i) vec.try_push_back(i, i + 0.5F, S{i, i + 1.0F});
