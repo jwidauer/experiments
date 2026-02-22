@@ -2,6 +2,7 @@
 #include <memory>
 #include <print>
 
+#include "alloc.hpp"
 #include "function.hpp"
 #include "multi_object_vector.hpp"
 #include "static_vector.hpp"
@@ -45,7 +46,10 @@ void print_range(const R& range, Proj proj = {}) {
 }  // namespace
 
 auto main() -> int {
-  constexpr Function<int(int, int), 1> add{[](int a, int b) -> int { return a + b; }};
+  pooalloc::PooAlloc<sizeof(void*), 10> alloc;
+  using Storage = AllocatedStorage<decltype(alloc)>;
+  Function<int(int, int), Storage> add{[](int a, int b) -> int { return a + b; }, alloc};
+  Function<int(int, int), InlineStorage<1>> sub{};
 
   auto vec = MultiObjectVector<10, int, float, S>{};
 

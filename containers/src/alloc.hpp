@@ -134,7 +134,7 @@ struct PooAlloc {
     const auto* byte_ptr = static_cast<std::byte*>(ptr);
     assert(is_inside_buffer(byte_ptr) && "Pointer does not belong to this allocator");
 
-    const auto offset = distance(buffer_.data(), byte_ptr);
+    const auto offset = distance(std::as_const(buffer_).data(), byte_ptr);
     assert(offset % BlockSize == 0 && "Pointer is not aligned to block size");
 
     const auto block_index = offset / BlockSize;
@@ -148,7 +148,7 @@ struct PooAlloc {
 
  private:
   template <typename Iter>
-  constexpr auto distance(Iter first, Iter second) const -> size_type {
+  static constexpr auto distance(Iter first, Iter second) -> size_type {
     return static_cast<size_type>(std::distance(first, second));
   }
 

@@ -1,43 +1,41 @@
 #pragma once
 
 #include <cassert>
-#include <functional>
-#include <new>
+#include <type_traits>
 #include <utility>
 
-#include "src/uninitialized_array.hpp"
+#include "ref.hpp"
+#include "uninitialized_array.hpp"
+#include "util.hpp"
 
 namespace detail {
 
-template <typename T>
-struct Wrapper {
-  using type = T;
-};
-
-template <typename R, typename... Args>
+template <typename Storage, typename R, typename... Args>
 struct VTable {
-  using StoragePtr = void*;
-
-  using InvokeFn = R (*)(StoragePtr, Args...);
-  using CopyFn = void (*)(StoragePtr, StoragePtr);
-  using DestroyFn = void (*)(StoragePtr);
+  using InvokeFn = R (*)(Storage&, Args&&...);
+  using CopyFn = void (*)(Storage&, Storage&);
+  using DestroyFn = void (*)(Storage&);
 
   const InvokeFn invoke;
   const CopyFn copy;
   const DestroyFn destroy;
 
   explicit constexpr VTable() noexcept
-      : invoke{static_cast<InvokeFn>([](StoragePtr, Args&&...) -> R { assert(false && "Invoking empty function"); })},
-        copy{static_cast<CopyFn>([](StoragePtr, StoragePtr) -> void {})},
-        destroy{static_cast<DestroyFn>([](StoragePtr) noexcept -> void {})} {}
+      : invoke{util::as<InvokeFn>([](Storage&, Args&&...) -> R { assert(false && "Invoking empty function"); })},
+        copy{util::as<CopyFn>([](Storage&, Storage&) -> void {})},
+        destroy{util::as<DestroyFn>([](Storage&) noexcept -> void {})} {}
 
   template <typename F>
-  explicit constexpr VTable(Wrapper<F> /*unused*/) noexcept
-      : invoke{static_cast<InvokeFn>([](StoragePtr storage, Args... args) -> R {
-          return (*static_cast<F*>(storage))(std::forward<Args>(args)...);
+  explicit constexpr VTable(std::type_identity<F> /*unused*/) noexcept
+      : invoke{util::as<InvokeFn>([](Storage& storage, Args&&... args) -> R {
+          return (*util::as<F*>(storage.data()))(std::forward<Args>(args)...);
         })},
-        copy{static_cast<CopyFn>([](StoragePtr dest, StoragePtr src) -> void { new (dest) F(*static_cast<F*>(src)); })},
-        destroy{static_cast<DestroyFn>([](StoragePtr storage) noexcept -> void { static_cast<F*>(storage)->~F(); })} {}
+        copy{util::as<CopyFn>(
+            [](Storage& dest, Storage& src) -> void { new (dest.data()) F(*util::as<F*>(src.data())); })},
+        destroy{util::as<DestroyFn>([](Storage& storage) noexcept -> void {
+          util::as<F*>(storage.data())->~F();
+          storage.template destroy<F>();
+        })} {}
 
   VTable(const VTable&) = delete;
   auto operator=(const VTable&) -> VTable& = delete;
@@ -48,73 +46,128 @@ struct VTable {
   ~VTable() = default;
 };
 
-template <typename R, typename... Args>
-static const VTable<R, Args...> kEmptyVtable{};
+template <typename Storage, typename R, typename... Args>
+static constexpr VTable<Storage, R, Args...> empty_vtable{};
 
-template <typename R, typename... Args>
-static const auto kEmptyVtablePtr = std::addressof(kEmptyVtable<R, Args...>);
+template <typename Storage, typename R, typename... Args>
+static constexpr auto empty_vtable_ptr = std::addressof(empty_vtable<Storage, R, Args...>);
 
 }  // namespace detail
 
-template <typename, std::size_t>
+template <typename T, typename U>
+concept StoragePolicy = requires(T storage, U&& value) {
+  { storage.store(std::forward<decltype(value)>(value)) } noexcept;
+  { storage.template destroy<std::decay_t<decltype(value)>>() } noexcept;
+  { storage.data() } -> std::same_as<void*>;
+  { std::as_const(storage).data() } -> std::same_as<const void*>;
+};
+
+template <std::size_t N>
+struct InlineStorage {
+  template <typename T>
+  constexpr void store(T&& value) noexcept {
+    static_assert(sizeof(T) <= sizeof(Storage), "Value too large for the specified storage size");
+    static_assert(alignof(T) <= alignof(Storage), "Value alignment requirement exceeds maximum supported alignment");
+
+    new (std::addressof(storage_)) T(std::forward<T>(value));
+  }
+
+  template <typename T>
+  constexpr void destroy() noexcept {}
+
+  [[nodiscard]] constexpr auto data() noexcept -> void* { return storage_.data(); }
+  [[nodiscard]] constexpr auto data() const noexcept -> const void* { return storage_.data(); }
+
+ private:
+  using Storage = AlignedStorage<void*, N>;
+  Storage storage_;
+};
+
+template <typename Allocator>
+struct AllocatedStorage {
+  constexpr explicit AllocatedStorage(Allocator& allocator) : allocator_{allocator} {}
+
+  template <typename T>
+  constexpr void store(T&& value) noexcept {
+    storage_ = allocator_->template allocate<T>();
+    assert(storage_ != nullptr && "Allocator failed to allocate memory for the object");
+    new (storage_) T(std::forward<T>(value));
+  }
+
+  template <typename T>
+  constexpr void destroy() noexcept {
+    allocator_->template deallocate<T>(storage_);
+    storage_ = nullptr;
+  }
+
+  [[nodiscard]] constexpr auto data() noexcept -> void* { return storage_; }
+  [[nodiscard]] constexpr auto data() const noexcept -> const void* { return storage_; }
+
+ private:
+  Ref<Allocator> allocator_;
+  void* storage_{nullptr};
+};
+
+template <typename, typename>
 struct Function;
 
-template <typename R, typename... Args, std::size_t N>
-struct Function<R(Args...), N> {
-  using Storage = AlignedStorage<void*, N>;
+template <typename R, typename... Args, typename Storage>
+struct Function<R(Args...), Storage> {
+  using VTable = detail::VTable<Storage, R, Args...>;
+  using VTablePtr = const VTable*;
 
-  using Vtable = detail::VTable<R, Args...>;
-  using VtablePtr = const Vtable*;
-
-  constexpr Function() noexcept : vtable_{detail::kEmptyVtablePtr<R, Args...>} {}
+  constexpr Function() noexcept : vtable_{detail::empty_vtable_ptr<Storage, R, Args...>} {}
 
   template <typename F>
-    requires std::is_invocable_r_v<R, F, Args...>
-  constexpr explicit Function(F&& f) {
-    static_assert(sizeof(F) <= sizeof(storage_), "Function object too large for the specified storage size");
-    static_assert(alignof(F) <= alignof(Storage), "Function object alignment requirement exceeds storage alignment");
-
-    static constexpr Vtable vt{detail::Wrapper<F>{}};
-    vtable_ = std::addressof(vt);
-
-    new (std::addressof(storage_)) F(std::forward<F>(f));
+    requires(std::is_invocable_r_v<R, F, Args...> && StoragePolicy<Storage, F> &&
+             std::is_default_constructible_v<Storage>)
+  constexpr explicit Function(F&& f) : storage_{} {
+    construct(std::forward<F>(f));
   }
 
-  constexpr Function(const Function& other) : vtable_{other.vtable_} {
-    vtable_->copy(std::addressof(storage_), std::addressof(other.storage_));
+  template <typename F, typename... StorageArgs>
+    requires(std::is_invocable_r_v<R, F, Args...> && StoragePolicy<Storage, F> &&
+             std::is_constructible_v<Storage, StorageArgs...>)
+  constexpr explicit Function(F&& f, StorageArgs&&... args) : storage_{std::forward<StorageArgs>(args)...} {
+    construct(std::forward<F>(f));
   }
+
+  constexpr Function(const Function& other) : vtable_{other.vtable_} { copy(other); }
 
   constexpr auto operator=(const Function& other) -> Function& {
-    if (this != std::addressof(other)) {
-      destroy();
-      vtable_ = other.vtable_;
-      vtable_->copy(std::addressof(storage_), std::addressof(other.storage_));
-    }
+    destroy();
+    vtable_ = other.vtable_;
+    copy(other);
     return *this;
   }
 
   constexpr Function(Function&& other) noexcept
-      : vtable_{std::exchange(other.vtable_, detail::kEmptyVtablePtr<R, Args...>)},
+      : vtable_{std::exchange(other.vtable_, detail::empty_vtable_ptr<R, Args...>)},
         storage_{std::move(other.storage_)} {}
 
   constexpr auto operator=(Function&& other) noexcept -> Function& {
-    if (this != std::addressof(other)) {
-      destroy();
-      vtable_ = std::exchange(other.vtable_, detail::kEmptyVtablePtr<R, Args...>);
-      storage_ = std::move(other.storage_);
-    }
+    destroy();
+    vtable_ = std::exchange(other.vtable_, detail::empty_vtable_ptr<R, Args...>);
+    storage_ = std::move(other.storage_);
     return *this;
   }
 
   constexpr ~Function() { destroy(); }
 
   constexpr auto operator()(Args&&... args) const -> R {
-    return vtable_->invoke(std::addressof(storage_), std::forward<Args>(args)...);
+    return vtable_->invoke(storage_, std::forward<Args>(args)...);
   }
 
  private:
-  constexpr void destroy() noexcept { vtable_->destroy(std::addressof(storage_)); }
+  template <typename F>
+  constexpr void construct(F&& f) {
+    static constexpr VTable vt{std::type_identity<std::decay_t<F>>{}};
+    vtable_ = std::addressof(vt);
+    storage_.store(std::forward<F>(f));
+  }
+  constexpr void destroy() noexcept { vtable_->destroy(storage_); }
+  constexpr void copy(const Function& other) { vtable_->copy(storage_, other.storage_); }
 
-  VtablePtr vtable_;
+  VTablePtr vtable_;
   mutable Storage storage_;
 };

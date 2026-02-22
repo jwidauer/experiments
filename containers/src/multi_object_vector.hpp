@@ -87,16 +87,16 @@ struct MultiObjectVector {
   constexpr auto try_push_back(const Ts&... values) -> tl::optional<size_type> {
     if (full()) return tl::nullopt;
 
-    ((std::construct_at(address_of<Ts>(size_), values)), ...);
     ++size_;
+    ((std::construct_at(address_of<Ts>(size_ - 1), values)), ...);
     return size_ - 1;
   }
 
   constexpr auto try_push_back(Ts&&... values) -> tl::optional<size_type> {
     if (full()) return tl::nullopt;
 
-    ((std::construct_at(address_of<Ts>(size_), std::move(values))), ...);
     ++size_;
+    ((std::construct_at(address_of<Ts>(size_ - 1), std::move(values))), ...);
     return size_ - 1;
   }
 
@@ -106,9 +106,9 @@ struct MultiObjectVector {
     // Move elements to make space
     ((std::ranges::move_backward(begin<Ts>() + index, end<Ts>(), end<Ts>() + 1)), ...);
 
+    ++size_;
     // Insert new elements
     ((std::construct_at(address_of<Ts>(index), values)), ...);
-    ++size_;
     return index;
   }
 
@@ -118,17 +118,17 @@ struct MultiObjectVector {
     // Move elements to make space
     ((std::ranges::move_backward(begin<Ts>() + index, end<Ts>(), end<Ts>() + 1)), ...);
 
+    ++size_;
     // Insert new elements
     ((std::construct_at(address_of<Ts>(index), std::move(values))), ...);
-    ++size_;
     return index;
   }
 
   constexpr void try_pop_back() {
     if (empty()) return;
 
+    ((std::destroy_at(address_of<Ts>(size_ - 1))), ...);
     --size_;
-    ((std::destroy_at(address_of<Ts>(size_))), ...);
   }
 
   constexpr void clear() {
