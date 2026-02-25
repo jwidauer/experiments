@@ -40,13 +40,13 @@ class UninitializedArray {
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
   // NOLINTEND(readability-identifier-naming)
 
-  constexpr auto at [[nodiscard]] (this auto& self, std::size_t idx)
+  constexpr auto at [[nodiscard]] (this auto& self, size_type idx)
   -> std::optional<NormalIterator<copy_const_t<decltype(self), T>*, UninitializedArray>> {
     return idx < N ? std::make_optional(self.begin() + idx) : std::nullopt;
   }
 
   template <typename Self>
-  constexpr auto operator[] [[nodiscard]] (this Self& self, std::size_t idx) -> copy_const_t<Self, T>* {
+  constexpr auto operator[] [[nodiscard]] (this Self& self, size_type idx) -> copy_const_t<Self, T>* {
     assert(idx < N && "Index out of bounds");
     return self.data() + idx;
   }
@@ -67,7 +67,7 @@ class UninitializedArray {
   }
   constexpr auto crend [[nodiscard]] () const -> const_reverse_iterator { return std::make_reverse_iterator(cbegin()); }
 
-  consteval auto size [[nodiscard]] () const -> std::size_t { return N; }
+  consteval auto size [[nodiscard]] () const -> size_type { return N; }
 
   template <typename Self>
   constexpr auto data [[nodiscard]] (this Self& self) -> copy_const_t<Self, T>* {

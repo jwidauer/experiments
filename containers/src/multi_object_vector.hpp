@@ -22,9 +22,20 @@ struct MultiObjectVector {
 
   // NOLINTBEGIN(readability-identifier-naming)
   using size_type = std::size_t;
+  using difference_type = std::ptrdiff_t;
   // NOLINTEND(readability-identifier-naming)
 
-  ~MultiObjectVector() { clear(); }
+  constexpr MultiObjectVector() = default;
+
+  constexpr ~MultiObjectVector()
+    requires((std::is_trivially_destructible_v<Ts>) || ...)
+  = default;
+
+  constexpr ~MultiObjectVector()
+    requires((!std::is_trivially_destructible_v<Ts>) || ...)
+  {
+    clear();
+  }
 
   [[nodiscard]] constexpr auto size() const -> size_type { return size_; }
   [[nodiscard]] constexpr auto capacity() const -> size_type { return N; }
@@ -127,19 +138,20 @@ struct MultiObjectVector {
   constexpr void try_pop_back() {
     if (empty()) return;
 
-    ((std::destroy_at(address_of<Ts>(size_ - 1))), ...);
+    destroy_at(size_ - 1);
     --size_;
   }
 
   constexpr void clear() {
-    while (!empty()) try_pop_back();
+    for (std::size_t i = 0; i < size_; ++i) destroy_at(i);
+    size_ = 0;
   }
 
-  constexpr auto erase(size_type index) -> bool {
+  constexpr auto try_erase(size_type index) -> bool {
     if (index >= size_) return false;
 
     // Destroy elements at index
-    ((std::destroy_at(address_of<Ts>(index))), ...);
+    destroy_at(index);
 
     // Move elements to fill the gap
     ((std::ranges::move(begin<Ts>() + index + 1, end<Ts>(), begin<Ts>() + index)), ...);
@@ -169,6 +181,8 @@ struct MultiObjectVector {
   }
 
  private:
+  constexpr void destroy_at(size_type index) { ((std::destroy_at(address_of<Ts>(index))), ...); }
+
   [[nodiscard]] constexpr auto find_impl(const auto& stor, const auto& value) const -> tl::optional<size_type> {
     const auto iter = std::ranges::find(stor, value);
     if (iter == stor.end()) return tl::nullopt;

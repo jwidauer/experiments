@@ -25,17 +25,23 @@ struct StaticVector {
 
   constexpr StaticVector() = default;
 
-  ~StaticVector() {
-    while (!empty()) pop_back();
+  constexpr ~StaticVector()
+    requires(std::is_trivially_destructible_v<T>)
+  = default;
+
+  constexpr ~StaticVector()
+    requires(!std::is_trivially_destructible_v<T>)
+  {
+    clear();
   }
 
-  constexpr auto begin() -> T* { return data_.data(); }
-  constexpr auto begin() const -> const T* { return data_.data(); }
-  constexpr auto cbegin() const -> const T* { return data_.data(); }
+  [[nodiscard]] constexpr auto begin() -> T* { return data_.data(); }
+  [[nodiscard]] constexpr auto begin() const -> const T* { return data_.data(); }
+  [[nodiscard]] constexpr auto cbegin() const -> const T* { return data_.data(); }
 
-  constexpr auto end() -> T* { return data_.data() + size_; }
-  constexpr auto end() const -> const T* { return data_.data() + size_; }
-  constexpr auto cend() const -> const T* { return data_.data() + size_; }
+  [[nodiscard]] constexpr auto end() -> T* { return data_.data() + size_; }
+  [[nodiscard]] constexpr auto end() const -> const T* { return data_.data() + size_; }
+  [[nodiscard]] constexpr auto cend() const -> const T* { return data_.data() + size_; }
 
   constexpr auto try_push_back(const T& value) -> tl::optional<T&> {
     if (full()) return tl::nullopt;  // Vector is full
@@ -103,22 +109,27 @@ struct StaticVector {
 
   constexpr auto try_erase(iterator pos) -> bool { return try_erase(distance(begin(), pos)); }
 
-  constexpr auto at(std::size_t index) -> tl::optional<T&> {
+  [[nodiscard]] constexpr auto at(std::size_t index) -> tl::optional<T&> {
     if (!is_valid_index(index)) return tl::nullopt;
     return *data_[index];
   }
-  constexpr auto at(std::size_t index) const -> tl::optional<const T&> {
+  [[nodiscard]] constexpr auto at(std::size_t index) const -> tl::optional<const T&> {
     if (!is_valid_index(index)) return tl::nullopt;
     return *data_[index];
   }
 
-  constexpr auto operator[](std::size_t index) -> T& {
+  [[nodiscard]] constexpr auto operator[](std::size_t index) -> T& {
     assert(is_valid_index(index) && "Index out of bounds");
     return data_[index];
   }
-  constexpr auto operator[](std::size_t index) const -> const T& {
+  [[nodiscard]] constexpr auto operator[](std::size_t index) const -> const T& {
     assert(is_valid_index(index) && "Index out of bounds");
     return data_[index];
+  }
+
+  constexpr void clear() {
+    for (std::size_t i = 0; i < size_; ++i) std::destroy_at(data_[i]);
+    size_ = 0;
   }
 
   [[nodiscard]] constexpr auto size() const -> std::size_t { return size_; }
