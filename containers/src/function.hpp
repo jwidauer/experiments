@@ -171,3 +171,8 @@ struct Function<R(Args...), Storage> {
   VTablePtr vtable_;
   mutable Storage storage_;
 };
+
+template <typename Signature, typename F>
+[[nodiscard]] constexpr auto make_function(F&& f) {
+  return Function<Signature, InlineStorage<sizeof(F)>>{std::forward<F>(f)};
+}

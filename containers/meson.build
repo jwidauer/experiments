@@ -12,7 +12,7 @@ dependencies = [
 
 exe = executable(
   'containers',
-  'src/containers.cpp',
+  'src/main.cpp',
   install: true,
   dependencies: dependencies,
   cpp_args: ['-Wcast-align=strict'],

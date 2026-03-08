@@ -2,7 +2,6 @@
 #define INCLUDE_UNINITIALIZED_ARRAY_HPP_
 
 #include <array>
-#include <bit>
 #include <cassert>
 #include <optional>
 
@@ -11,16 +10,22 @@
 
 template <class T, std::size_t N>
 struct AlignedStorage {
+  static constexpr std::size_t alignment = alignof(T);
+  static constexpr std::size_t size = sizeof(T);
+  static constexpr std::size_t aligned_size = size % alignment == 0 ? size : size + alignment - (size % alignment);
+
  private:
-  struct alignas(T) Data {
-    std::array<std::byte, sizeof(T) * N> data;
-  } data_;
+  struct alignas(T) Storage {
+    alignas(T) std::array<std::byte, aligned_size * N> data;
+  };
+
+  Storage data_;
 
  public:
-  [[nodiscard]] constexpr auto data() -> Data* { return std::addressof(data_); }
-  [[nodiscard]] constexpr auto data() const -> const Data* { return std::addressof(data_); }
-
-  [[nodiscard]] consteval auto size() const -> std::size_t { return data_.data.size(); }
+  template <typename Self>
+  [[nodiscard]] constexpr auto data(this Self& self) -> Storage* {
+    return std::addressof(self.data_);
+  }
 };
 
 template <typename T, std::size_t N>
@@ -40,8 +45,9 @@ class UninitializedArray {
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
   // NOLINTEND(readability-identifier-naming)
 
-  constexpr auto at [[nodiscard]] (this auto& self, size_type idx)
-  -> std::optional<NormalIterator<copy_const_t<decltype(self), T>*, UninitializedArray>> {
+  template <typename Self>
+  constexpr auto at [[nodiscard]] (this Self& self, size_type idx)
+  -> std::optional<NormalIterator<copy_const_t<Self, T>*, UninitializedArray>> {
     return idx < N ? std::make_optional(self.begin() + idx) : std::nullopt;
   }
 
@@ -74,8 +80,8 @@ class UninitializedArray {
     if constexpr (is_sufficiently_trivial) {
       return self.storage_.data();
     } else {
-      using ptr_t = copy_const_t<Self, T>*;
-      return std::bit_cast<ptr_t>(self.storage_.data());
+      using Ptr = copy_const_t<Self, T>*;
+      return reinterpret_cast<Ptr>(self.storage_.data());
     }
   }
 

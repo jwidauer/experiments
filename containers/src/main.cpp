@@ -24,6 +24,7 @@ struct S {
 
   int x;
   float y;
+  bool b{false};
 };
 
 constexpr auto make_s_arr() -> UninitializedArray<S, 10> {
@@ -50,6 +51,8 @@ auto main() -> int {
   using Storage = AllocatedStorage<decltype(alloc)>;
   Function<int(int, int), Storage> add{[](int a, int b) -> int { return a + b; }, alloc};
   Function<int(int, int), InlineStorage<1>> sub{};
+
+  auto func = make_function<int(int, int)>([](int a, int b) -> int { return a * b; });
 
   auto vec = MultiObjectVector<10, int, float, S>{};
 
