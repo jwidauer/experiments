@@ -5,6 +5,8 @@
 
 #include "normal_iterator.hpp"
 
+namespace ctr {
+
 template <class Derived>
 concept ContiguousDataHolder = requires(Derived& d) {
   typename Derived::value_type;
@@ -116,3 +118,5 @@ struct ContiguousContainer {
   constexpr auto data() const noexcept -> const_pointer { return to_derived().data(); }
   constexpr auto sz [[nodiscard]] () const noexcept -> size_type { return to_derived().size(); }
 };
+
+}  // namespace ctr

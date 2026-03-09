@@ -4,10 +4,11 @@
 #include <type_traits>
 #include <utility>
 
+#include "ctr/aligned_storage.hpp"
 #include "ref.hpp"
-#include "uninitialized_array.hpp"
 #include "util.hpp"
 
+namespace ctr {
 namespace detail {
 
 template <typename Storage, typename R, typename... Args>
@@ -64,22 +65,28 @@ concept StoragePolicy = requires(T storage, U&& value) {
 
 template <std::size_t N>
 struct InlineStorage {
+ private:
+  using Storage = AlignedStorage<void*, N>;
+
+ public:
   template <typename T>
+    requires(sizeof(T) <= sizeof(Storage) && alignof(T) <= alignof(Storage))
   constexpr void store(T&& value) noexcept {
     static_assert(sizeof(T) <= sizeof(Storage), "Value too large for the specified storage size");
     static_assert(alignof(T) <= alignof(Storage), "Value alignment requirement exceeds maximum supported alignment");
 
-    new (std::addressof(storage_)) T(std::forward<T>(value));
+    new (data()) T(std::forward<T>(value));
   }
 
   template <typename T>
   constexpr void destroy() noexcept {}
 
-  [[nodiscard]] constexpr auto data() noexcept -> void* { return storage_.data(); }
-  [[nodiscard]] constexpr auto data() const noexcept -> const void* { return storage_.data(); }
+  template <typename Self>
+  [[nodiscard]] constexpr auto data(this Self& self) noexcept -> copy_const_t<Self, void>* {
+    return self.storage_.data();
+  }
 
  private:
-  using Storage = AlignedStorage<void*, N>;
   Storage storage_;
 };
 
@@ -100,8 +107,10 @@ struct AllocatedStorage {
     storage_ = nullptr;
   }
 
-  [[nodiscard]] constexpr auto data() noexcept -> void* { return storage_; }
-  [[nodiscard]] constexpr auto data() const noexcept -> const void* { return storage_; }
+  template <typename Self>
+  [[nodiscard]] constexpr auto data(this Self& self) noexcept -> copy_const_t<Self, void>* {
+    return self.storage_;
+  }
 
  private:
   Ref<Allocator> allocator_;
@@ -176,3 +185,5 @@ template <typename Signature, typename F>
 [[nodiscard]] constexpr auto make_function(F&& f) {
   return Function<Signature, InlineStorage<sizeof(F)>>{std::forward<F>(f)};
 }
+
+}  // namespace ctr

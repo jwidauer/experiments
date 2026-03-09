@@ -1,32 +1,13 @@
-#ifndef INCLUDE_UNINITIALIZED_ARRAY_HPP_
-#define INCLUDE_UNINITIALIZED_ARRAY_HPP_
+#pragma once
 
-#include <array>
 #include <cassert>
 #include <optional>
 
+#include "aligned_storage.hpp"
 #include "normal_iterator.hpp"
 #include "type_traits.hpp"
 
-template <class T, std::size_t N>
-struct AlignedStorage {
-  static constexpr std::size_t alignment = alignof(T);
-  static constexpr std::size_t size = sizeof(T);
-  static constexpr std::size_t aligned_size = size % alignment == 0 ? size : size + alignment - (size % alignment);
-
- private:
-  struct alignas(T) Storage {
-    alignas(T) std::array<std::byte, aligned_size * N> data;
-  };
-
-  Storage data_;
-
- public:
-  template <typename Self>
-  [[nodiscard]] constexpr auto data(this Self& self) -> Storage* {
-    return std::addressof(self.data_);
-  }
-};
+namespace ctr {
 
 template <typename T, std::size_t N>
 class UninitializedArray {
@@ -94,10 +75,10 @@ class UninitializedArray {
   static constexpr bool is_sufficiently_trivial =
       std::is_trivially_default_constructible_v<T> && std::is_trivially_destructible_v<T>;
 
-  using storage_t = std::conditional_t<is_sufficiently_trivial, std::array<T, N>, AlignedStorage<T, N>>;
+  using Storage = std::conditional_t<is_sufficiently_trivial, std::array<T, N>, AlignedStorage<T, N>>;
 
   // Allow storage of zero elements to not take up space
-  [[no_unique_address]] storage_t storage_;
+  [[no_unique_address]] Storage storage_;
 };
 
-#endif  // INCLUDE_UNINITIALIZED_ARRAY_HPP_
+}  // namespace ctr

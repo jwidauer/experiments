@@ -2,15 +2,15 @@
 #include <memory>
 #include <print>
 
-#include "alloc.hpp"
-#include "function.hpp"
-#include "multi_object_vector.hpp"
-#include "static_vector.hpp"
+#include "ctr/alloc.hpp"
+#include "ctr/function.hpp"
+#include "ctr/multi_object_vector.hpp"
+#include "ctr/static_vector.hpp"
 
 namespace {
 
-consteval auto make_data() -> UninitializedArray<int, 10> {
-  UninitializedArray<int, 10> arr;
+consteval auto make_data() -> ctr::UninitializedArray<int, 10> {
+  ctr::UninitializedArray<int, 10> arr;
   for (std::size_t i = 0; i < arr.size(); ++i) {
     *arr[i] = static_cast<int>(i);
   }
@@ -27,8 +27,8 @@ struct S {
   bool b{false};
 };
 
-constexpr auto make_s_arr() -> UninitializedArray<S, 10> {
-  UninitializedArray<S, 10> arr;
+constexpr auto make_s_arr() -> ctr::UninitializedArray<S, 10> {
+  ctr::UninitializedArray<S, 10> arr;
   for (std::size_t i = 0; i < arr.size(); ++i) {
     std::construct_at(arr[i], i, i + 1);
   }
@@ -47,14 +47,14 @@ void print_range(const R& range, Proj proj = {}) {
 }  // namespace
 
 auto main() -> int {
-  pooalloc::PooAlloc<sizeof(void*), 10> alloc;
-  using Storage = AllocatedStorage<decltype(alloc)>;
-  Function<int(int, int), Storage> add{[](int a, int b) -> int { return a + b; }, alloc};
-  Function<int(int, int), InlineStorage<1>> sub{};
+  ctr::Smallocator<sizeof(void*), 10> alloc;
+  using Storage = ctr::AllocatedStorage<decltype(alloc)>;
+  ctr::Function<int(int, int), Storage> add{[](int a, int b) -> int { return a + b; }, alloc};
+  ctr::Function<int(int, int), ctr::InlineStorage<1>> sub{};
 
-  auto func = make_function<int(int, int)>([](int a, int b) -> int { return a * b; });
+  auto func = ctr::make_function<int(int, int)>([](int a, int b) -> int { return a * b; });
 
-  auto vec = MultiObjectVector<10, int, float, S>{};
+  auto vec = ctr::MultiObjectVector<10, int, float, S>{};
 
   for (int i = 0; i < 5; ++i) vec.try_push_back(i, i + 0.5F, S{i, i + 1.0F});
 

@@ -1,7 +1,8 @@
-#ifndef INCLUDE_SRC_NORMAL_ITERATOR_HPP_
-#define INCLUDE_SRC_NORMAL_ITERATOR_HPP_
+#pragma once
 
 #include <iterator>
+
+namespace ctr {
 
 // This iterator adapter is @a normal in the sense that it does not
 // change the semantics of any of the operators of its iterator
@@ -18,12 +19,14 @@ class NormalIterator {
   using traits_type = std::iterator_traits<Iterator>;
 
  public:
+  // NOLINTBEGIN(readability-identifier-naming)
   using iterator_type = Iterator;
   using iterator_category = typename traits_type::iterator_category;
   using value_type = typename traits_type::value_type;
   using difference_type = typename traits_type::difference_type;
   using reference = typename traits_type::reference;
   using pointer = typename traits_type::pointer;
+  // NOLINTEND(readability-identifier-naming)
 
   constexpr NormalIterator() noexcept : current{Iterator{}} {}
 
@@ -140,4 +143,4 @@ template <typename Container, typename Iter>
   return NormalIterator<Iter, Container>(std::forward<Iter>(i));
 }
 
-#endif  // INCLUDE_SRC_NORMAL_ITERATOR_HPP_
+}  // namespace ctr

@@ -13,7 +13,7 @@ template <typename T, std::size_t N>
 struct StaticVector {
   // NOLINTBEGIN(readability-identifier-naming)
   using value_type = T;
-  using size_type = SmallestTypeHoldingT<N>;
+  using size_type = SmallestTypeHolding<N>;
   using difference_type = std::make_signed_t<size_type>;
   using reference = value_type&;
   using const_reference = const value_type&;

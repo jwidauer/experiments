@@ -6,15 +6,13 @@ project(
   default_options: ['warning_level=3', 'cpp_std=c++26'],
 )
 
-dependencies = [
-  dependency('tl-optional', required: true),
-]
+subdir('include')
 
 exe = executable(
   'containers',
   'src/main.cpp',
   install: true,
-  dependencies: dependencies,
+  dependencies: [ctr_dep],
   cpp_args: ['-Wcast-align=strict'],
 )
 

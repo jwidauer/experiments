@@ -5,6 +5,7 @@
 #include <limits>
 #include <type_traits>
 
+namespace ctr {
 namespace detail {
 
 template <typename T>
@@ -46,4 +47,6 @@ consteval auto smallest_type_holding() {
 }
 
 template <std::size_t N>
-using SmallestTypeHoldingT = decltype(smallest_type_holding<N>())::type;
+using SmallestTypeHolding = decltype(smallest_type_holding<N>())::type;
+
+}  // namespace ctr

@@ -3,6 +3,8 @@
 #include <memory>
 #include <type_traits>
 
+namespace ctr {
+
 template <typename T>
 struct Ref {
   using type = T;  // NOLINT(readability-identifier-naming) STL-like type alias
@@ -27,3 +29,5 @@ struct Ref {
 
   type* ptr_;
 };
+
+}  // namespace ctr

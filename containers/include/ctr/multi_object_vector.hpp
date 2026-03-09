@@ -8,22 +8,23 @@
 
 #include "uninitialized_array.hpp"
 
+namespace ctr {
+
 template <std::size_t N, typename... Ts>
+  requires(sizeof...(Ts) > 0)
 struct MultiObjectVector {
-  static_assert(sizeof...(Ts) > 0, "At least one type must be provided");
-
-  using storage_t = std::tuple<UninitializedArray<Ts, N>...>;
-
-  template <std::size_t I>
-  using storage_object_t = std::tuple_element_t<I, storage_t>;
-
-  template <std::size_t I>
-  using storage_element_t = typename storage_object_t<I>::value_type;
-
   // NOLINTBEGIN(readability-identifier-naming)
-  using size_type = std::size_t;
+  using size_type = SmallestTypeHolding<N>;
   using difference_type = std::ptrdiff_t;
   // NOLINTEND(readability-identifier-naming)
+
+  using Storage = std::tuple<UninitializedArray<Ts, N>...>;
+
+  template <std::size_t I>
+  using StorageObject = std::tuple_element_t<I, Storage>;
+
+  template <std::size_t I>
+  using StorageElement = typename StorageObject<I>::value_type;
 
   constexpr MultiObjectVector() = default;
 
@@ -63,7 +64,7 @@ struct MultiObjectVector {
   }
 
   template <std::size_t I, typename Self>
-  [[nodiscard]] constexpr auto data(this Self& self) -> copy_const_t<Self, storage_element_t<I>>* {
+  [[nodiscard]] constexpr auto data(this Self& self) -> copy_const_t<Self, StorageElement<I>>* {
     return std::get<I>(self.storages_).data();
   }
 
@@ -73,7 +74,7 @@ struct MultiObjectVector {
   }
 
   template <std::size_t I, typename Self>
-  [[nodiscard]] constexpr auto storage(this Self& self) -> std::span<copy_const_t<Self, storage_element_t<I>>> {
+  [[nodiscard]] constexpr auto storage(this Self& self) -> std::span<copy_const_t<Self, StorageElement<I>>> {
     return {std::get<I>(self.storages_).data(), self.size()};
   }
 
@@ -84,7 +85,7 @@ struct MultiObjectVector {
 
   template <std::size_t I, typename Self>
   [[nodiscard]] constexpr auto at(this Self& self, size_type idx)
-      -> tl::optional<copy_const_t<Self, typename storage_object_t<I>::value_type>&> {
+      -> tl::optional<copy_const_t<Self, typename StorageObject<I>::value_type>&> {
     if (idx >= self.size_) return tl::nullopt;
     return self.template storage<I>()[idx];
   }
@@ -99,7 +100,7 @@ struct MultiObjectVector {
     if (full()) return tl::nullopt;
 
     ++size_;
-    ((std::construct_at(address_of<Ts>(size_ - 1), values)), ...);
+    construct_at(size_ - 1, values...);
     return size_ - 1;
   }
 
@@ -107,7 +108,7 @@ struct MultiObjectVector {
     if (full()) return tl::nullopt;
 
     ++size_;
-    ((std::construct_at(address_of<Ts>(size_ - 1), std::move(values))), ...);
+    construct_at(size_ - 1, std::move(values)...);
     return size_ - 1;
   }
 
@@ -119,7 +120,7 @@ struct MultiObjectVector {
 
     ++size_;
     // Insert new elements
-    ((std::construct_at(address_of<Ts>(index), values)), ...);
+    construct_at(index, values...);
     return index;
   }
 
@@ -131,7 +132,7 @@ struct MultiObjectVector {
 
     ++size_;
     // Insert new elements
-    ((std::construct_at(address_of<Ts>(index), std::move(values))), ...);
+    construct_at(index, std::move(values)...);
     return index;
   }
 
@@ -161,7 +162,7 @@ struct MultiObjectVector {
   }
 
   template <std::size_t I>
-  constexpr auto find(const storage_element_t<I>& value) const -> tl::optional<size_type> {
+  constexpr auto find(const StorageElement<I>& value) const -> tl::optional<size_type> {
     return find_impl(storage<I>(), value);
   }
 
@@ -171,7 +172,7 @@ struct MultiObjectVector {
   }
 
   template <std::size_t I>
-  constexpr auto contains(const storage_element_t<I>& value) const -> bool {
+  constexpr auto contains(const StorageElement<I>& value) const -> bool {
     return std::ranges::contains(storage<I>(), value);
   }
 
@@ -181,20 +182,37 @@ struct MultiObjectVector {
   }
 
  private:
-  constexpr void destroy_at(size_type index) { ((std::destroy_at(address_of<Ts>(index))), ...); }
+  static constexpr auto indices = std::index_sequence_for<Ts...>{};
 
-  [[nodiscard]] constexpr auto find_impl(const auto& stor, const auto& value) const -> tl::optional<size_type> {
-    const auto iter = std::ranges::find(stor, value);
-    if (iter == stor.end()) return tl::nullopt;
+  [[nodiscard]] constexpr auto find_impl(const auto& store, const auto& value) const -> tl::optional<size_type> {
+    const auto iter = std::ranges::find(store, value);
+    if (iter == store.end()) return tl::nullopt;
 
-    return static_cast<size_type>(std::distance(stor.begin(), iter));
+    return static_cast<size_type>(std::distance(store.begin(), iter));
   }
 
-  template <typename T, typename Self>
-  [[nodiscard]] constexpr auto address_of(this Self& self, size_type idx) -> copy_const_t<Self, T>* {
-    return std::addressof(self.template storage<T>()[idx]);
+  template <std::size_t I, typename Self>
+  [[nodiscard]] constexpr auto address_of(this Self& self, size_type idx) -> copy_const_t<Self, StorageElement<I>>* {
+    return std::get<I>(self.storages_)[idx];
   }
 
-  storage_t storages_;
-  std::size_t size_ = 0;
+  template <typename... Args, std::size_t... I>
+  constexpr void construct_at(size_type index, std::index_sequence<I...> /*unused*/, Args&&... args) {
+    ((std::construct_at(address_of<I>(index), std::forward<Args>(args))), ...);
+  }
+  template <typename... Args>
+  constexpr void construct_at(size_type index, Args&&... args) {
+    construct_at(index, indices, std::forward<Args>(args)...);
+  }
+
+  template <std::size_t... I>
+  constexpr void destroy_at(size_type index, std::index_sequence<I...> /*unused*/) {
+    ((std::destroy_at(address_of<I>(index))), ...);
+  }
+  constexpr void destroy_at(size_type index) { destroy_at(index, indices); }
+
+  Storage storages_;
+  size_type size_ = 0;
 };
+
+}  // namespace ctr
