@@ -1,5 +1,5 @@
 project(
-  'containers',
+  'asyncli',
   'cpp',
   version: '0.1',
   meson_version: '>= 1.3.0',
@@ -9,13 +9,10 @@ project(
 subdir('include')
 
 exe = executable(
-  'containers',
+  'asyncli',
   'src/main.cpp',
   install: true,
-  dependencies: [ctr_dep],
-  cpp_args: ['-Wcast-align=strict'],
+  dependencies: [asyncli_dep],
 )
 
 test('basic', exe)
-
-meson.override_dependency('containers', ctr_dep)

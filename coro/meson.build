@@ -1,21 +1,18 @@
 project(
-  'containers',
+  'coro',
   'cpp',
   version: '0.1',
   meson_version: '>= 1.3.0',
   default_options: ['warning_level=3', 'cpp_std=c++26'],
 )
 
-subdir('include')
+dependencies = []
 
 exe = executable(
-  'containers',
+  'main',
   'src/main.cpp',
   install: true,
-  dependencies: [ctr_dep],
-  cpp_args: ['-Wcast-align=strict'],
+  dependencies: dependencies,
 )
 
 test('basic', exe)
-
-meson.override_dependency('containers', ctr_dep)
