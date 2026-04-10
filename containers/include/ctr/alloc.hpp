@@ -3,7 +3,6 @@
 #include <array>
 #include <bitset>
 #include <cassert>
-#include <climits>
 #include <cstddef>
 #include <utility>
 
@@ -19,11 +18,10 @@ struct Smallocator {
   // NOLINTEND(readability-identifier-naming)
 
   template <typename T>
-  constexpr auto allocate() -> void* {
-    constexpr auto size = sizeof(T);
+  constexpr auto allocate() -> T* {
     constexpr auto alignment = alignof(T);
 
-    constexpr auto required_blocks = (size + BlockSize - 1) / BlockSize;
+    constexpr auto required_blocks = required_blocks_for<T>();
     static_assert(required_blocks > 0 && required_blocks <= BlockCount, "Type too large for allocator");
 
     constexpr auto blocks_per_alignment = alignment / BlockSize;
@@ -34,19 +32,17 @@ struct Smallocator {
       mask <<= blocks_per_alignment;
       if ((used_blocks_ & mask).none()) {  // Found contiguous free blocks
         used_blocks_ |= mask;              // Mark blocks as used
-        return buffer_.data() + (i * BlockSize);
+        return std::bit_cast<T*>(buffer_.data() + (i * BlockSize));
       }
     }
     return nullptr;  // No suitable blocks found
   }
 
   template <typename T>
-  constexpr void deallocate(void* ptr) {
-    constexpr auto size = sizeof(T);
+  constexpr void deallocate(const T* const ptr) {
+    constexpr auto required_blocks = required_blocks_for<T>();
 
-    constexpr auto required_blocks = (size + BlockSize - 1) / BlockSize;
-
-    const auto* byte_ptr = static_cast<std::byte*>(ptr);
+    const auto* const byte_ptr = std::bit_cast<std::byte*>(ptr);
     assert(is_inside_buffer(byte_ptr) && "Pointer does not belong to this allocator");
 
     const auto offset = distance(std::as_const(buffer_).data(), byte_ptr);
@@ -62,12 +58,17 @@ struct Smallocator {
   }
 
  private:
+  template <typename T>
+  constexpr auto required_blocks_for() {
+    return (sizeof(T) + BlockSize - 1) / BlockSize;
+  }
+
   template <typename Iter>
   static constexpr auto distance(Iter first, Iter second) -> size_type {
     return static_cast<size_type>(std::distance(first, second));
   }
 
-  constexpr auto is_inside_buffer(const std::byte* ptr) const -> bool {
+  constexpr auto is_inside_buffer(const std::byte* const ptr) const -> bool {
     return buffer_.begin() <= ptr && ptr < buffer_.end();
   }
 

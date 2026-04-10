@@ -1,11 +1,14 @@
 #pragma once
 
 #include <cassert>
+#include <concepts>
+#include <cstddef>
 #include <type_traits>
 #include <utility>
 
-#include "ctr/aligned_storage.hpp"
+#include "aligned_storage.hpp"
 #include "ref.hpp"
+#include "type_traits.hpp"
 #include "util.hpp"
 
 namespace ctr {
@@ -96,14 +99,15 @@ struct AllocatedStorage {
 
   template <typename T>
   constexpr void store(T&& value) noexcept {
-    storage_ = allocator_->template allocate<T>();
-    assert(storage_ != nullptr && "Allocator failed to allocate memory for the object");
-    new (storage_) T(std::forward<T>(value));
+    auto* tmp = allocator_->template allocate<T>();
+    assert(tmp != nullptr && "Allocator failed to allocate memory for the object");
+    std::construct_at(tmp, std::forward<T>(value));
+    storage_ = tmp;
   }
 
   template <typename T>
   constexpr void destroy() noexcept {
-    allocator_->template deallocate<T>(storage_);
+    allocator_->template deallocate<T>(static_cast<T*>(storage_));
     storage_ = nullptr;
   }
 
