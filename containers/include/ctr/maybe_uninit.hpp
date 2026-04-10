@@ -18,9 +18,9 @@ union MaybeUninit {
     requires(!std::is_trivially_default_constructible_v<T>)
   {}
 
-  template <typename U = std::remove_cv_t<T>>
-    requires std::constructible_from<T, U>
-  explicit MaybeUninit(U&& val) : value_{std::forward<U>(val)} {}
+  template <typename... Args>
+    requires std::constructible_from<T, Args...>
+  constexpr explicit MaybeUninit(Args&&... args) : value_{std::forward<Args>(args)...} {}
 
   ~MaybeUninit()
     requires std::is_trivially_destructible_v<T>

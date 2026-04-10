@@ -1,9 +1,12 @@
 #pragma once
 
+#include <array>
 #include <cassert>
+#include <cstddef>
+#include <iterator>
 #include <optional>
 
-#include "aligned_storage.hpp"
+#include "maybe_uninit.hpp"
 #include "normal_iterator.hpp"
 #include "type_traits.hpp"
 
@@ -58,12 +61,8 @@ class UninitializedArray {
 
   template <typename Self>
   constexpr auto data [[nodiscard]] (this Self& self) -> copy_const_t<Self, T>* {
-    if constexpr (is_sufficiently_trivial) {
-      return self.storage_.data();
-    } else {
-      using Ptr = copy_const_t<Self, T>*;
-      return reinterpret_cast<Ptr>(self.storage_.data());
-    }
+    static_assert(N != 0, "Cannot call data() on an UninitializedArray of size 0");
+    return self.storage_.data()->data();
   }
 
  private:
@@ -72,13 +71,8 @@ class UninitializedArray {
     return make_normal_iterator<Self>(std::forward<Iter>(ptr));
   }
 
-  static constexpr bool is_sufficiently_trivial =
-      std::is_trivially_default_constructible_v<T> && std::is_trivially_destructible_v<T>;
-
-  using Storage = std::conditional_t<is_sufficiently_trivial, std::array<T, N>, AlignedStorage<T, N>>;
-
   // Allow storage of zero elements to not take up space
-  [[no_unique_address]] Storage storage_;
+  [[no_unique_address]] std::array<MaybeUninit<T>, N> storage_;
 };
 
 }  // namespace ctr
