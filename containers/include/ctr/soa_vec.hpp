@@ -1,40 +1,45 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
+#include <cassert>
 #include <cstddef>
 #include <span>
 #include <tl/optional.hpp>
 #include <tuple>
 #include <utility>
 
+#include "maybe_uninit.hpp"
 #include "type_traits.hpp"
-#include "uninitialized_array.hpp"
 
 namespace ctr {
 
 template <std::size_t N, typename... Ts>
   requires(sizeof...(Ts) > 0)
-struct MultiObjectVector {
+struct SoaVec {
   // NOLINTBEGIN(readability-identifier-naming)
   using size_type = SmallestTypeHolding<N>;
   using difference_type = std::ptrdiff_t;
   // NOLINTEND(readability-identifier-naming)
 
-  using Storage = std::tuple<UninitializedArray<Ts, N>...>;
+  template <typename T>
+  using Array = std::array<MaybeUninit<T>, N>;
+
+  using Storage = std::tuple<Array<Ts>...>;
 
   template <std::size_t I>
   using StorageObject = std::tuple_element_t<I, Storage>;
 
   template <std::size_t I>
-  using StorageElement = typename StorageObject<I>::value_type;
+  using StorageElement = typename StorageObject<I>::value_type::value_type;
 
-  constexpr MultiObjectVector() = default;
+  constexpr SoaVec() = default;
 
-  constexpr ~MultiObjectVector()
+  constexpr ~SoaVec()
     requires((std::is_trivially_destructible_v<Ts>) || ...)
   = default;
 
-  constexpr ~MultiObjectVector()
+  constexpr ~SoaVec()
     requires((!std::is_trivially_destructible_v<Ts>) || ...)
   {
     clear();
@@ -72,22 +77,24 @@ struct MultiObjectVector {
 
   template <typename T, typename Self>
   [[nodiscard]] constexpr auto data(this Self& self) -> copy_const_t<Self, T>* {
-    return std::get<UninitializedArray<T, N>>(self.storages_).data();
+    return std::get<Array<T>>(self.storages_).data();
   }
 
   template <std::size_t I, typename Self>
+    requires(N > 0)
   [[nodiscard]] constexpr auto storage(this Self& self) -> std::span<copy_const_t<Self, StorageElement<I>>> {
-    return {std::get<I>(self.storages_).data(), self.size()};
+    return {std::get<I>(self.storages_).data()->data(), self.size()};
   }
 
   template <typename T, typename Self>
+    requires(N > 0)
   [[nodiscard]] constexpr auto storage(this Self& self) -> std::span<copy_const_t<Self, T>> {
-    return {std::get<UninitializedArray<T, N>>(self.storages_).data(), self.size()};
+    return {std::get<Array<T>>(self.storages_).data()->data(), self.size()};
   }
 
   template <std::size_t I, typename Self>
   [[nodiscard]] constexpr auto at(this Self& self, size_type idx)
-      -> tl::optional<copy_const_t<Self, typename StorageObject<I>::value_type>&> {
+      -> tl::optional<copy_const_t<Self, StorageElement<I>>&> {
     if (idx >= self.size_) return tl::nullopt;
     return self.template storage<I>()[idx];
   }
@@ -112,6 +119,18 @@ struct MultiObjectVector {
     ++size_;
     construct_at(size_ - 1, std::move(values)...);
     return size_ - 1;
+  }
+
+  constexpr auto push_back(const Ts&... values) -> size_type {
+    auto res = try_push_back(values...);
+    assert(res.has_value() && "SoaVec is full, cannot push_back");
+    return *res;
+  }
+
+  constexpr auto push_back(Ts&&... values) -> size_type {
+    auto res = try_push_back(std::move(values)...);
+    assert(res.has_value() && "SoaVec is full, cannot push_back");
+    return *res;
   }
 
   constexpr auto try_insert(size_type index, const Ts&... values) -> tl::optional<size_type> {
@@ -195,7 +214,7 @@ struct MultiObjectVector {
 
   template <std::size_t I, typename Self>
   [[nodiscard]] constexpr auto address_of(this Self& self, size_type idx) -> copy_const_t<Self, StorageElement<I>>* {
-    return std::get<I>(self.storages_)[idx];
+    return std::get<I>(self.storages_)[idx].data();
   }
 
   template <typename... Args, std::size_t... I>

@@ -10,6 +10,8 @@ namespace ctr {
 
 template <typename T>
 union MaybeUninit {
+  using value_type = T;  // NOLINT(readability-identifier-naming)
+
   MaybeUninit()
     requires std::is_trivially_default_constructible_v<T>
   = default;

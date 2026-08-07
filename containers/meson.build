@@ -7,6 +7,7 @@ project(
 )
 
 subdir('include')
+subdir('tests')
 
 exe = executable(
   'containers',

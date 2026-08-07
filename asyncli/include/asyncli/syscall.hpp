@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cerrno>
 #include <system_error>
 
 #include "result.hpp"

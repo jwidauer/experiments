@@ -37,25 +37,61 @@ struct StaticVector {
     clear();
   }
 
-  [[nodiscard]] constexpr auto begin() -> T* { return data_.data(); }
-  [[nodiscard]] constexpr auto begin() const -> const T* { return data_.data(); }
-  [[nodiscard]] constexpr auto cbegin() const -> const T* { return data_.data(); }
+  [[nodiscard]] constexpr auto at(std::size_t index) -> tl::optional<reference> {
+    if (!is_valid_index(index)) return tl::nullopt;
+    return *data_[index];
+  }
+  [[nodiscard]] constexpr auto at(std::size_t index) const -> tl::optional<const_reference> {
+    if (!is_valid_index(index)) return tl::nullopt;
+    return *data_[index];
+  }
 
-  [[nodiscard]] constexpr auto end() -> T* { return data_.data() + size_; }
-  [[nodiscard]] constexpr auto end() const -> const T* { return data_.data() + size_; }
-  [[nodiscard]] constexpr auto cend() const -> const T* { return data_.data() + size_; }
+  [[nodiscard]] constexpr auto operator[](std::size_t index) -> reference {
+    assert(is_valid_index(index) && "Index out of bounds");
+    return data_[index];
+  }
+  [[nodiscard]] constexpr auto operator[](std::size_t index) const -> const_reference {
+    assert(is_valid_index(index) && "Index out of bounds");
+    return data_[index];
+  }
 
-  constexpr auto try_push_back(const T& value) -> tl::optional<T&> {
+  [[nodiscard]] constexpr auto front() -> reference {
+    assert(!empty() && "Vector is empty");
+    return data_[0];
+  }
+  [[nodiscard]] constexpr auto front() const -> const_reference {
+    assert(!empty() && "Vector is empty");
+    return data_[0];
+  }
+
+  [[nodiscard]] constexpr auto back() -> reference {
+    assert(!empty() && "Vector is empty");
+    return data_[size_ - 1];
+  }
+  [[nodiscard]] constexpr auto back() const -> const_reference {
+    assert(!empty() && "Vector is empty");
+    return data_[size_ - 1];
+  }
+
+  [[nodiscard]] constexpr auto begin() -> pointer { return data_.data(); }
+  [[nodiscard]] constexpr auto begin() const -> const_pointer { return data_.data(); }
+  [[nodiscard]] constexpr auto cbegin() const -> const_pointer { return data_.data(); }
+
+  [[nodiscard]] constexpr auto end() -> pointer { return data_.data() + size_; }
+  [[nodiscard]] constexpr auto end() const -> const_pointer { return data_.data() + size_; }
+  [[nodiscard]] constexpr auto cend() const -> const_pointer { return data_.data() + size_; }
+
+  constexpr auto try_push_back(const T& value) -> tl::optional<reference> {
     if (full()) return tl::nullopt;  // Vector is full
     return *std::construct_at(data_[size_++], value);
   }
-  constexpr auto try_push_back(T&& value) -> tl::optional<T&> {
+  constexpr auto try_push_back(T&& value) -> tl::optional<reference> {
     if (full()) return tl::nullopt;  // Vector is full
     return *std::construct_at(data_[size_++], std::move(value));
   }
 
   template <typename... Args>
-  constexpr auto try_emplace_back(Args&&... args) -> tl::optional<T&> {
+  constexpr auto try_emplace_back(Args&&... args) -> tl::optional<reference> {
     if (full()) return tl::nullopt;  // Vector is full
     return *std::construct_at(data_[size_++], std::forward<Args>(args)...);
   }
@@ -67,7 +103,7 @@ struct StaticVector {
     --size_;
   }
 
-  constexpr auto try_insert(std::size_t index, const T& value) -> tl::optional<T&> {
+  constexpr auto try_insert(std::size_t index, const T& value) -> tl::optional<reference> {
     if (full() || index > size_) return tl::nullopt;  // Vector is full or index is out of bounds
 
     // Move elements to make space
@@ -78,7 +114,7 @@ struct StaticVector {
     return *std::construct_at(data_[index], value);
   }
 
-  constexpr auto try_insert(std::size_t index, T&& value) -> tl::optional<T&> {
+  constexpr auto try_insert(std::size_t index, T&& value) -> tl::optional<reference> {
     if (full() || index > size_) return tl::nullopt;  // Vector is full or index is out of bounds
 
     // Move elements to make space
@@ -89,15 +125,15 @@ struct StaticVector {
     return *std::construct_at(data_[index], std::move(value));
   }
 
-  constexpr auto try_insert(iterator pos, const T& value) -> tl::optional<T&> {
+  constexpr auto try_insert(iterator pos, const T& value) -> tl::optional<reference> {
     return try_insert(distance(begin(), pos), value);
   }
-  constexpr auto try_insert(iterator pos, T&& value) -> tl::optional<T&> {
+  constexpr auto try_insert(iterator pos, T&& value) -> tl::optional<reference> {
     return try_insert(distance(begin(), pos), std::move(value));
   }
 
   constexpr auto try_erase(std::size_t index) -> bool {
-    if (empty() || !is_valid_index(index)) return false;  // Vector is empty or index is out of bounds
+    if (!is_valid_index(index)) return false;  // Vector is empty or index is out of bounds
 
     // Destroy the element at the specified index
     std::destroy_at(data_[index]);
@@ -111,32 +147,14 @@ struct StaticVector {
 
   constexpr auto try_erase(iterator pos) -> bool { return try_erase(distance(begin(), pos)); }
 
-  [[nodiscard]] constexpr auto at(std::size_t index) -> tl::optional<T&> {
-    if (!is_valid_index(index)) return tl::nullopt;
-    return *data_[index];
-  }
-  [[nodiscard]] constexpr auto at(std::size_t index) const -> tl::optional<const T&> {
-    if (!is_valid_index(index)) return tl::nullopt;
-    return *data_[index];
-  }
-
-  [[nodiscard]] constexpr auto operator[](std::size_t index) -> T& {
-    assert(is_valid_index(index) && "Index out of bounds");
-    return data_[index];
-  }
-  [[nodiscard]] constexpr auto operator[](std::size_t index) const -> const T& {
-    assert(is_valid_index(index) && "Index out of bounds");
-    return data_[index];
-  }
-
   constexpr void clear() {
     for (std::size_t i = 0; i < size_; ++i) std::destroy_at(data_[i]);
     size_ = 0;
   }
 
-  [[nodiscard]] constexpr auto size() const -> std::size_t { return size_; }
+  [[nodiscard]] constexpr auto size() const -> size_type { return size_; }
 
-  [[nodiscard]] constexpr auto capacity() const -> std::size_t { return N; }
+  [[nodiscard]] constexpr auto capacity() const -> size_type { return N; }
 
   [[nodiscard]] constexpr auto empty() const -> bool { return size_ == 0; }
   [[nodiscard]] constexpr auto full() const -> bool { return size_ == N; }

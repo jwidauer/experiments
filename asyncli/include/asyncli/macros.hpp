@@ -2,7 +2,9 @@
 
 #include "result.hpp"
 
-#define ASYNCLI_RETURN_IF_ERROR(expr) \
-  if (auto res = (expr); !res) {      \
-    return Error{res.error()};        \
-  }
+#define ASYNCLI_TRY(expr)                           \
+  ({                                                \
+    auto res = (expr);                              \
+    if (!res) return Error{std::move(res).error()}; \
+    std::move(res).value();                         \
+  })

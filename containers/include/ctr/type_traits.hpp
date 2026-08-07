@@ -49,4 +49,7 @@ consteval auto smallest_type_holding() {
 template <std::size_t N>
 using SmallestTypeHolding = decltype(smallest_type_holding<N>())::type;
 
+template <typename Fn>
+concept TransparentComparator = requires { typename Fn::is_transparent; };
+
 }  // namespace ctr

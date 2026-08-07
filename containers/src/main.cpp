@@ -1,11 +1,16 @@
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <print>
+#include <type_traits>
 
 #include "ctr/alloc.hpp"
 #include "ctr/function.hpp"
-#include "ctr/multi_object_vector.hpp"
+#include "ctr/id.hpp"
+#include "ctr/soa_vec.hpp"
 #include "ctr/static_vector.hpp"
+#include "ctr/uninitialized_array.hpp"
+#include "tl/optional.hpp"
 
 namespace {
 
@@ -44,6 +49,9 @@ void print_range(const R& range, Proj proj = {}) {
   std::println("]");
 }
 
+struct TagA {};
+struct TagB {};
+
 }  // namespace
 
 auto main() -> int {
@@ -54,7 +62,7 @@ auto main() -> int {
 
   auto func = ctr::make_function<int(int, int)>([](int a, int b) -> int { return a * b; });
 
-  auto vec = ctr::MultiObjectVector<10, int, float, S>{};
+  auto vec = ctr::SoaVec<10, int, float, S>{};
 
   for (int i = 0; i < 5; ++i) vec.try_push_back(i, i + 0.5F, S{i, i + 1.0F});
 
@@ -68,6 +76,18 @@ auto main() -> int {
   for (int i = 0; i < 5; ++i) {
     static_vec.try_push_back(i * 10);
   }
+
+  using AId = ctr::Id<TagA>;
+  using BId = ctr::Id<TagB>;
+
+  auto a1 = AId::create();
+  auto a2 = AId::create();
+
+  auto b1 = BId::create();
+  auto b2 = BId::create();
+
+  std::println("AId: {}, {}", a1, a2);
+  std::println("BId: {}, {}", b1, b2);
 
   return 0;
 }

@@ -71,6 +71,9 @@ class Task {
 
   constexpr explicit Task(std::coroutine_handle<promise_type> h) noexcept : handle_{h} {}
 
+  Task(const Task&) = delete;
+  auto operator=(const Task&) -> Task& = delete;
+
   // Move-only
   constexpr Task(Task&& other) noexcept : handle_{std::exchange(other.handle_, nullptr)} {}
 
@@ -82,9 +85,6 @@ class Task {
     return *this;
   }
 
-  Task(const Task&) = delete;
-  auto operator=(const Task&) -> Task& = delete;
-
   constexpr ~Task() {
     if (handle_) handle_.destroy();
   }
@@ -93,6 +93,9 @@ class Task {
   constexpr explicit operator bool() const noexcept { return handle_ != nullptr; }
 
   [[nodiscard]] constexpr auto done() const noexcept -> bool { return !handle_ || handle_.done(); }
+  constexpr void resume() {
+    if (handle_) handle_.resume();
+  }
 
   // Awaiter returned when you co_await a task
   struct Awaiter {
@@ -119,10 +122,7 @@ class Task {
   constexpr auto sync_wait() -> T {
     // Simple spin wait - in production, use proper synchronization
     // Resume until done
-    while (!handle_.done()) {
-      handle_.resume();
-    }
-
+    while (!done()) resume();
     return std::move(handle_.promise()).get_result();
   }
 };
@@ -171,6 +171,9 @@ class Task<void> {
 
   constexpr explicit Task(std::coroutine_handle<promise_type> h) noexcept : handle_{h} {}
 
+  Task(const Task&) = delete;
+  auto operator=(const Task&) -> Task& = delete;
+
   // Move-only
   constexpr Task(Task&& other) noexcept : handle_{std::exchange(other.handle_, nullptr)} {}
 
@@ -182,9 +185,6 @@ class Task<void> {
     return *this;
   }
 
-  Task(const Task&) = delete;
-  auto operator=(const Task&) -> Task& = delete;
-
   constexpr ~Task() {
     if (handle_) handle_.destroy();
   }
@@ -193,6 +193,9 @@ class Task<void> {
   constexpr explicit operator bool() const noexcept { return handle_ != nullptr; }
 
   [[nodiscard]] constexpr auto done() const noexcept -> bool { return !handle_ || handle_.done(); }
+  constexpr void resume() {
+    if (handle_) handle_.resume();
+  }
 
   // Awaiter returned when you co_await a task
   struct Awaiter {
@@ -220,10 +223,7 @@ class Task<void> {
   constexpr void sync_wait() {
     // Simple spin wait - in production, use proper synchronization
     // Resume until done
-    while (!handle_.done()) {
-      handle_.resume();
-    }
-
+    while (!done()) resume();
     handle_.promise().get_result();
   }
 };

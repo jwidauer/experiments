@@ -31,7 +31,7 @@ class UninitializedArray {
 
   template <typename Self>
   constexpr auto at [[nodiscard]] (this Self& self, size_type idx)
-  -> std::optional<NormalIterator<copy_const_t<Self, T>*, UninitializedArray>> {
+      -> std::optional<NormalIterator<copy_const_t<Self, T>*, UninitializedArray>> {
     return idx < N ? std::make_optional(self.begin() + idx) : std::nullopt;
   }
 
@@ -66,9 +66,9 @@ class UninitializedArray {
   }
 
  private:
-  template <typename Self, typename Iter>
-  constexpr auto make_iter(this Self& /*self*/, Iter&& ptr) -> decltype(auto) {
-    return make_normal_iterator<Self>(std::forward<Iter>(ptr));
+  template <typename Self, typename Ptr>
+  constexpr auto make_iter(this Self& /*self*/, Ptr&& ptr) -> decltype(auto) {
+    return make_normal_iterator<Self>(std::forward<Ptr>(ptr));
   }
 
   // Allow storage of zero elements to not take up space

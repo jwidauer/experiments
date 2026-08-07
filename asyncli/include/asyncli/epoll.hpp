@@ -19,21 +19,21 @@ struct Epoll {
     return syscall<epoll_create1>(0).transform(construct<Epoll>());
   }
 
-  [[nodiscard]] auto add(FileDescriptor fd, Events events) -> Result<void> {
+  [[nodiscard]] auto add(const FileDescriptor& fd, Events events) -> Result<void> {
     epoll_event event{};
     event.events = events.to_int();
     event.data.fd = fd.val();
     return syscall<epoll_ctl>(fd_.val(), EPOLL_CTL_ADD, fd.val(), &event).transform(Ignore{});
   }
 
-  [[nodiscard]] auto modify(FileDescriptor fd, Events events) -> Result<void> {
+  [[nodiscard]] auto modify(const FileDescriptor& fd, Events events) -> Result<void> {
     epoll_event event{};
     event.events = events.to_int();
     event.data.fd = fd.val();
     return syscall<epoll_ctl>(fd_.val(), EPOLL_CTL_MOD, fd.val(), &event).transform(Ignore{});
   }
 
-  [[nodiscard]] auto remove(FileDescriptor fd) -> Result<void> {
+  [[nodiscard]] auto remove(const FileDescriptor& fd) -> Result<void> {
     return syscall<epoll_ctl>(fd_.val(), EPOLL_CTL_DEL, fd.val(), nullptr).transform(Ignore{});
   }
 
